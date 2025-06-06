@@ -19,6 +19,9 @@
         "requested": "[2.0.2, )",
         "resolved": "2.0.2",
         "contentHash": "6bJefqPtD9W8NgEChq7OYdWc2msBYPV5FJMv7oWZD9UYByCznYTeBmhJwaiThOpsSpcbo8/XNsxKANMyauJ5vQ=="
+      },
+      "ecommons": {
+        "type": "Project"
       }
     }
   }

@@ -7,6 +7,8 @@ using ZodiacBuddy.BonusLight;
 using ZodiacBuddy.Stages.Atma;
 using ZodiacBuddy.Stages.Brave;
 using ZodiacBuddy.Stages.Novus;
+using ECommons;
+using ECommons.DalamudServices;
 
 namespace ZodiacBuddy;
 
@@ -30,7 +32,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     public ZodiacBuddyPlugin(IDalamudPluginInterface pluginInterface) {
         pluginInterface.Create<Service>();
 
-        ECommons.ECommonsMain.Init(pluginInterface, this, Modules.All);
+        ECommons.ECommonsMain.Init(pluginInterface, this);
 
         Service.Plugin = this;
         Service.Configuration = pluginInterface.GetPluginConfig() as PluginConfiguration ?? new PluginConfiguration();
