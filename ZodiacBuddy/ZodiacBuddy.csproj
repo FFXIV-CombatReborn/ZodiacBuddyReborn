@@ -9,4 +9,14 @@
   <ItemGroup>
     <PackageReference Include="LitJWT" Version="2.0.2" />
   </ItemGroup>
+
+  <ItemGroup>
+	 <ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+		<UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+	
+	
 </Project>

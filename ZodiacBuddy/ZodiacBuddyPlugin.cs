@@ -30,6 +30,8 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     public ZodiacBuddyPlugin(IDalamudPluginInterface pluginInterface) {
         pluginInterface.Create<Service>();
 
+        ECommons.ECommonsMain.Init(pluginInterface, this, Modules.All);
+
         Service.Plugin = this;
         Service.Configuration = pluginInterface.GetPluginConfig() as PluginConfiguration ?? new PluginConfiguration();
 
@@ -61,6 +63,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         this.novusManager.Dispose();
         this.braveManager.Dispose();
         Service.BonusLightManager.Dispose();
+        ECommons.ECommonsMain.Dispose();
     }
 
     /// <summary>
