@@ -1,6 +1,7 @@
 using Dalamud.Configuration;
 using Dalamud.Game.Text;
 using Newtonsoft.Json;
+using System.Text.Json.Serialization;
 using ZodiacBuddy.BonusLight;
 using ZodiacBuddy.InformationWindow;
 using ZodiacBuddy.Stages.Brave;
@@ -17,6 +18,8 @@ public class PluginConfiguration : IPluginConfiguration {
 
     public bool BraveCopyTarget { get; set; } = true;
 
+    [JsonPropertyName("IsAtmaManagerEnabled")]
+    public bool IsAtmaManagerEnabled { get; set; } = false;
     public BonusLightConfiguration BonusLight { get; } = new();
 
     public NovusConfiguration Novus { get; } = new();

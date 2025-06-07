@@ -24,7 +24,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
 
     private readonly WindowSystem windowSystem;
     private readonly ConfigWindow configWindow;
-
+    private readonly AtmaManager atma;
     /// <summary>
     /// Initializes a new instance of the <see cref="ZodiacBuddyPlugin"/> class.
     /// </summary>
@@ -52,10 +52,13 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         this.animusBuddy = new AtmaManager();
         this.novusManager = new NovusManager();
         this.braveManager = new BraveManager();
+        this.atma = new AtmaManager();
     }
 
     /// <inheritdoc/>
     public void Dispose() {
+        Svc.Framework.Update -= atma.WaitForBetweenAreasAndExecute;
+        atma.Dispose();
         Service.CommandManager.RemoveHandler(Command);
 
         Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;

@@ -1,15 +1,23 @@
-﻿using System;
-using System.Linq;
-using Dalamud.Game.Addon.Lifecycle;
+﻿using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Dalamud.Plugin.Services;
+using ECommons;
+using ECommons.Automation;
+using ECommons.Commands;
+using ECommons.DalamudServices;
+using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ImGuiNET;
 using Lumina.Excel.Sheets;
+using System;
+using System.Linq;
 using ZodiacBuddy.Stages.Atma.Data;
 using RelicNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RelicNote;
 
@@ -141,9 +149,9 @@ internal class AtmaManager : IDisposable {
 
         // Service.PluginLog.Debug($"Target selected: {selectedTarget.Name} in {zoneName}.");
         if (Service.Configuration.BraveEchoTarget) {
-	        var sb = new SeStringBuilder()
-		        .AddText("Target selected: ")
-		        .AddUiForeground(selectedTarget.Name, 62);
+            var sb = new SeStringBuilder()
+                .AddText("Target selected: ")
+                .AddUiForeground(selectedTarget.Name, 62);
 
             if (index == 3) // leves
                 sb.AddText($" from {selectedTarget.Issuer}");
@@ -172,10 +180,37 @@ internal class AtmaManager : IDisposable {
         else {
             Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
             this.Teleport(aetheryteId);
+
+            if (!Service.Configuration.IsAtmaManagerEnabled)
+                return;
+            Svc.Framework.Update += WaitForBetweenAreasAndExecute;
         }
         return;
+    }
 
-        static bool IsOwnerNode(AtkEventTarget* target, AtkComponentCheckBox* checkbox)
+    private bool hasEnteredBetweenAreas = false;
+
+    internal void WaitForBetweenAreasAndExecute(IFramework framework)
+    {
+        if (!Service.Configuration.IsAtmaManagerEnabled)
+            return;
+
+        if (!hasEnteredBetweenAreas)
+        {
+            if (Svc.Condition[ConditionFlag.BetweenAreas])
+            {
+                hasEnteredBetweenAreas = true;
+            }
+        }
+        else
+        {
+            if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady())
+                {
+                Chat.ExecuteCommand("/vnav moveflag");
+                hasEnteredBetweenAreas = false;
+            }
+        }
+    }
+    static unsafe bool IsOwnerNode(AtkEventTarget* target, AtkComponentCheckBox* checkbox)
             => target == checkbox->AtkComponentButton.OwnerNode;
     }
-}
