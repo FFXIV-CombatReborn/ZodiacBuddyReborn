@@ -92,7 +92,6 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     /// <param name="message">Message to send.</param>
     public static void PrintError(string message)
         => Service.ChatGui.PrintError($"[ZodiacBuddy] {message}");
-
     private void OnOpenConfigUi()
         => this.configWindow.IsOpen = true;
 

@@ -9,8 +9,9 @@ using ECommons.Automation;
 using ECommons.Commands;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
+using ECommons.Automation.LegacyTaskManager;
+///using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -205,7 +206,9 @@ internal class AtmaManager : IDisposable {
         else
         {
             if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady())
-                {
+            {
+                Chat.ExecuteCommand("/mount \"Company Chocobo\"");
+                TaskManager.Enqueue(() => Svc.Condition[ConditionFlag.Mounted], 2000);
                 Chat.ExecuteCommand("/vnav moveflag");
                 hasEnteredBetweenAreas = false;
             }
