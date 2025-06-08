@@ -38,6 +38,8 @@ internal class AtmaManager : IDisposable {
     public void Dispose() {
         Service.AddonLifecycle.UnregisterListener(ReceiveEventDetour);
     }
+    public bool NavReady
+    => VNavmesh.Nav.IsReady();
     private readonly TaskManager TaskManager = new();
     private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
         var closestAetheryteId = 0u;
@@ -201,6 +203,7 @@ internal class AtmaManager : IDisposable {
     }
     private unsafe void EnqueueMountUp()
     {
+        TaskManager.Enqueue(() => NavReady);
         if (Svc.Condition[ConditionFlag.Mounted])
         {
             Service.PluginLog.Debug("Already mounted, skipping EnqueueMountUp.");
@@ -211,7 +214,7 @@ internal class AtmaManager : IDisposable {
         const uint mountId = 1; // Your chosen mount
 
         // Enqueue mount action
-        TaskManager.Enqueue(() =>
+        TaskManager.Enqueue(() => 
         {
             if (am->GetActionStatus(ActionType.Mount, mountId) != 0)
             {
@@ -228,15 +231,7 @@ internal class AtmaManager : IDisposable {
         });
 
         // Wait until player is mounted
-        TaskManager.Enqueue(() =>
-        {
-            if (!Svc.Condition[ConditionFlag.Mounted])
-            {
-                return false; // Keep this task active until mounted
-            }
-            return true; // Mounted, proceed
-        });
-
+        TaskManager.Enqueue(() => !Svc.Condition[ConditionFlag.Mounted]);
         // Start navigation AFTER mounting confirmed and delay complete
         TaskManager.Enqueue(() =>
         {
