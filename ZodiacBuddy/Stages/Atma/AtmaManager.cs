@@ -6,10 +6,11 @@ using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.Automation;
+using ECommons.Automation.LegacyTaskManager;
 using ECommons.Commands;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
-using ECommons.Automation.LegacyTaskManager;
+using FFXIVClientStructs.FFXIV.Client.Game;
 ///using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
@@ -23,7 +24,6 @@ using ZodiacBuddy.Stages.Atma.Data;
 using RelicNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RelicNote;
 
 namespace ZodiacBuddy.Stages.Atma;
-
 /// <summary>
 /// Your buddy for the Atma enhancement stage.
 /// </summary>
@@ -34,12 +34,11 @@ internal class AtmaManager : IDisposable {
     public AtmaManager() {
         Service.AddonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "RelicNoteBook", ReceiveEventDetour);
     }
-
     /// <inheritdoc/>
     public void Dispose() {
         Service.AddonLifecycle.UnregisterListener(ReceiveEventDetour);
     }
-
+    private readonly TaskManager TaskManager = new();
     private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
         var closestAetheryteId = 0u;
         var closestDistance = double.MaxValue;
@@ -108,7 +107,8 @@ internal class AtmaManager : IDisposable {
         }
     }
 
-    private unsafe void ReceiveEvent(AddonRelicNoteBook* addon, AtkEvent* eventData) {
+    private unsafe void ReceiveEvent(AddonRelicNoteBook* addon, AtkEvent* eventData)
+    {
         var relicNote = RelicNote.Instance();
         if (relicNote == null)
             return;
@@ -117,7 +117,8 @@ internal class AtmaManager : IDisposable {
         var index = addon->CategoryList->SelectedItemIndex;
         var targetComponent = eventData->Target;
 
-        var selectedTarget = targetComponent switch {
+        var selectedTarget = targetComponent switch
+        {
             // Enemies
             _ when index == 0 && IsOwnerNode(targetComponent, addon->Enemy0.CheckBox) => BraveBook.GetValue(bookId).Enemies[0],
             _ when index == 0 && IsOwnerNode(targetComponent, addon->Enemy1.CheckBox) => BraveBook.GetValue(bookId).Enemies[1],
@@ -149,7 +150,8 @@ internal class AtmaManager : IDisposable {
             : selectedTarget.ZoneName;
 
         // Service.PluginLog.Debug($"Target selected: {selectedTarget.Name} in {zoneName}.");
-        if (Service.Configuration.BraveEchoTarget) {
+        if (Service.Configuration.BraveEchoTarget)
+        {
             var sb = new SeStringBuilder()
                 .AddText("Target selected: ")
                 .AddUiForeground(selectedTarget.Name, 62);
@@ -169,31 +171,92 @@ internal class AtmaManager : IDisposable {
         }
 
         var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
-        if (aetheryteId == 0) {
-            if (index == 1) {
+        if (aetheryteId == 0)
+        {
+            if (index == 1)
+            {
                 // Dungeons
                 AgentContentsFinder.Instance()->OpenRegularDuty(selectedTarget.ContentsFinderConditionId);
             }
-            else {
+            else
+            {
                 Service.PluginLog.Warning($"Could not find an aetheryte for {zoneName}");
             }
         }
-        else {
+        else
+        {
             Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
             this.Teleport(aetheryteId);
 
             if (!Service.Configuration.IsAtmaManagerEnabled)
                 return;
-            Svc.Framework.Update += WaitForBetweenAreasAndExecute;
-        }
-        return;
-    }
 
+            if (!awaitingTeleportFromRelicBookClick)
+            {
+                awaitingTeleportFromRelicBookClick = true;
+                Svc.Framework.Update += WaitForBetweenAreasAndExecute;
+            }
+            return;
+        }
+    }
+    private unsafe void EnqueueMountUp()
+    {
+        if (Svc.Condition[ConditionFlag.Mounted])
+        {
+            Service.PluginLog.Debug("Already mounted, skipping EnqueueMountUp.");
+            return; // Don't mount again if already mounted
+        }
+
+        var am = ActionManager.Instance();
+        const uint mountId = 1; // Your chosen mount
+
+        // Enqueue mount action
+        TaskManager.Enqueue(() =>
+        {
+            if (am->GetActionStatus(ActionType.Mount, mountId) != 0)
+            {
+                Service.PluginLog.Warning($"Mount action {mountId} unavailable.");
+                return true; // Stop trying if unavailable
+            }
+
+            if (!am->UseAction(ActionType.Mount, mountId))
+            {
+                Service.PluginLog.Warning($"Mount action {mountId} failed to execute.");
+            }
+
+            return true; // Action attempted, move on to next task
+        });
+
+        // Wait until player is mounted
+        TaskManager.Enqueue(() =>
+        {
+            if (!Svc.Condition[ConditionFlag.Mounted])
+            {
+                return false; // Keep this task active until mounted
+            }
+            return true; // Mounted, proceed
+        });
+
+        // Start navigation AFTER mounting confirmed and delay complete
+        TaskManager.Enqueue(() =>
+        {
+            Chat.ExecuteCommand("/vnav flyflag");
+
+            // Clear flags here, after mount + nav started
+            hasEnteredBetweenAreas = false;
+            awaitingTeleportFromRelicBookClick = false;
+            hasQueuedMountTasks = false; // <-- reset here
+
+            return true;
+        });
+    }
+    private bool hasQueuedMountTasks = false;
     private bool hasEnteredBetweenAreas = false;
+    private bool awaitingTeleportFromRelicBookClick = false;
 
     internal void WaitForBetweenAreasAndExecute(IFramework framework)
     {
-        if (!Service.Configuration.IsAtmaManagerEnabled)
+        if (!Service.Configuration.IsAtmaManagerEnabled || !awaitingTeleportFromRelicBookClick)
             return;
 
         if (!hasEnteredBetweenAreas)
@@ -205,12 +268,10 @@ internal class AtmaManager : IDisposable {
         }
         else
         {
-            if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady())
+            if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady() && !hasQueuedMountTasks)
             {
-                Chat.ExecuteCommand("/mount \"Company Chocobo\"");
-                TaskManager.Enqueue(() => Svc.Condition[ConditionFlag.Mounted], 2000);
-                Chat.ExecuteCommand("/vnav moveflag");
-                hasEnteredBetweenAreas = false;
+                hasQueuedMountTasks = true;
+                EnqueueMountUp();
             }
         }
     }
