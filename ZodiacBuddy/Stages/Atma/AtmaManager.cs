@@ -5,6 +5,7 @@ using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
 using ECommons;
+using ECommons.Throttlers;
 using ECommons.Automation;
 using ECommons.Automation.LegacyTaskManager;
 using ECommons.Commands;
@@ -111,6 +112,9 @@ internal class AtmaManager : IDisposable {
 
     private unsafe void ReceiveEvent(AddonRelicNoteBook* addon, AtkEvent* eventData)
     {
+        if (!EzThrottler.Throttle("RelicNoteClick", 500))
+            return;
+
         var relicNote = RelicNote.Instance();
         if (relicNote == null)
             return;
@@ -204,43 +208,47 @@ internal class AtmaManager : IDisposable {
     private unsafe void EnqueueMountUp()
     {
         TaskManager.Enqueue(() => NavReady);
+
         if (Svc.Condition[ConditionFlag.Mounted])
         {
             Service.PluginLog.Debug("Already mounted, skipping EnqueueMountUp.");
-            return; // Don't mount again if already mounted
+            return;
         }
 
-        var am = ActionManager.Instance();
-        const uint mountId = 1; // Your chosen mount
-
-        // Enqueue mount action
-        TaskManager.Enqueue(() => 
+        TaskManager.Enqueue(() =>
         {
-            if (am->GetActionStatus(ActionType.Mount, mountId) != 0)
+            var am = ActionManager.Instance();
+            const uint rouletteId = 9;
+
+            if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
             {
-                Service.PluginLog.Warning($"Mount action {mountId} unavailable.");
-                return true; // Stop trying if unavailable
+                Service.PluginLog.Debug("Attempting to use mount roulette...");
+                if (am->UseAction(ActionType.GeneralAction, rouletteId))
+                {
+                    Service.PluginLog.Debug("Using mount roulette.");
+                }
+                else
+                {
+                    Service.PluginLog.Warning("Failed to use mount roulette.");
+                }
+            }
+            else
+            {
+                Service.PluginLog.Warning("Mount roulette unavailable.");
             }
 
-            if (!am->UseAction(ActionType.Mount, mountId))
-            {
-                Service.PluginLog.Warning($"Mount action {mountId} failed to execute.");
-            }
-
-            return true; // Action attempted, move on to next task
+            return true; // Continue to next task regardless
         });
 
-        // Wait until player is mounted
-        TaskManager.Enqueue(() => !Svc.Condition[ConditionFlag.Mounted]);
-        // Start navigation AFTER mounting confirmed and delay complete
+        TaskManager.Enqueue(() => Svc.Condition[ConditionFlag.Mounted]);
+
         TaskManager.Enqueue(() =>
         {
             Chat.ExecuteCommand("/vnav flyflag");
 
-            // Clear flags here, after mount + nav started
             hasEnteredBetweenAreas = false;
             awaitingTeleportFromRelicBookClick = false;
-            hasQueuedMountTasks = false; // <-- reset here
+            hasQueuedMountTasks = false;
 
             return true;
         });
