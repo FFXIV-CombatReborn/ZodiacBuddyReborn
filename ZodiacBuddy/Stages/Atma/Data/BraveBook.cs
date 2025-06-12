@@ -183,7 +183,7 @@ internal struct BraveBook {
 
     private static MapLinkPayload GetMonsterPosition(uint monsterTargetId) {
         return monsterTargetId switch {
-            356 => new MapLinkPayload( 152,   5, 29.1f, 15.3f), // sylpheed screech        // East Shroud
+            356 => new MapLinkPayload( 152,   5, 28.2f, 12.9f), // sylpheed screech        // East Shroud
             357 => new MapLinkPayload( 156,  25, 17.0f, 16.0f), // daring harrier          // Mor Dhona
             358 => new MapLinkPayload( 155,  53, 13.8f, 27.0f), // giant logger            // Coerthas Central Highlands
             359 => new MapLinkPayload( 138,  18, 17.7f, 16.3f), // shoalspine Sahagin      // Western La Noscea
@@ -210,7 +210,7 @@ internal struct BraveBook {
             380 => new MapLinkPayload( 156,  25, 29.6f, 14.3f), // gigas bonze             // Mor Dhona
             381 => new MapLinkPayload( 180,  30, 23.9f,  7.7f), // U'Ghamaro roundsman     // Outer La Noscea
             382 => new MapLinkPayload( 152,   5, 25.7f, 13.3f), // sylph bonnet            // East Shroud
-            383 => new MapLinkPayload( 138,  18, 13.4f, 16.9f), // shelfclaw Reaver        // Western La Noscea
+            383 => new MapLinkPayload( 138,  18, 13.8f, 17.2f), // shelfclaw Reaver        // Western La Noscea
             384 => new MapLinkPayload( 146,  23, 26.1f, 21.1f), // Zahar'ak fortune-teller // Southern Thanalan
             385 => new MapLinkPayload( 137,  17, 29.5f, 20.8f), // 2nd Cohort laquearius   // Eastern La Noscea
             386 => new MapLinkPayload( 138,  18, 18.1f, 19.9f), // shelfscale Sahagin      // Western La Noscea
@@ -220,16 +220,16 @@ internal struct BraveBook {
             390 => new MapLinkPayload( 155,  53, 13.8f, 27.0f), // giant reader            // Coerthas Central Highlands
             391 => new MapLinkPayload( 180,  30, 23.9f,  7.7f), // U'Ghamaro quarryman     // Outer La Noscea
             392 => new MapLinkPayload( 152,   5, 24.6f, 11.2f), // Sylphlands sentinel     // East Shroud
-            393 => new MapLinkPayload( 138,  18, 14.4f, 17.0f), // sea wasp                // Western La Noscea
+            393 => new MapLinkPayload( 138,  18, 13.8f, 17.2f), // sea wasp                // Western La Noscea
             394 => new MapLinkPayload( 147,  24, 18.0f, 16.9f), // magitek vanguard        // Northern Thanalan
             395 => new MapLinkPayload( 137,  17, 29.5f, 20.8f), // 2nd Cohort eques        // Eastern La Noscea
-            396 => new MapLinkPayload( 152,   5, 29.1f, 12.4f), // sylpheed sigh           // East Shroud
+            396 => new MapLinkPayload( 152,   5, 28.2f, 12.9f), // sylpheed sigh           // East Shroud
             397 => new MapLinkPayload( 146,  23, 16.4f, 23.7f), // iron tortoise           // Southern Thanalan
             398 => new MapLinkPayload( 156,  25, 11.4f, 12.9f), // 5th Cohort hoplomachus  // Mor Dhona
             399 => new MapLinkPayload( 155,  53, 13.8f, 30.5f), // snow wolf               // Coerthas Central Highlands
             400 => new MapLinkPayload( 153,   6, 33.3f, 23.7f), // ked                     // South Shroud
             401 => new MapLinkPayload( 180,  30, 23.9f,  7.7f), // U'Ghamaro bedesman      // Outer La Noscea
-            402 => new MapLinkPayload( 138,  18, 13.4f, 16.9f), // shelfeye Reaver         // Western La Noscea
+            402 => new MapLinkPayload( 138,  18, 13.8f, 17.2f), // shelfeye Reaver         // Western La Noscea
             403 => new MapLinkPayload( 140,  20, 11.0f,  6.2f), // 4th Cohort laquearius   // Western Thanalan
             404 => new MapLinkPayload( 156,  25, 33.4f, 15.2f), // gigas bhikkhu           // Mor Dhona
             405 => new MapLinkPayload( 138,  18, 14.5f, 14.0f), // Sapsa shelfscale        // Western La Noscea
@@ -243,10 +243,10 @@ internal struct BraveBook {
             413 => new MapLinkPayload( 155,  53, 33.9f, 21.6f), // Natalan watchwolf       // Coerthas Central Highlands
             414 => new MapLinkPayload( 152,   5, 24.6f, 11.2f), // violet screech          // East Shroud
             415 => new MapLinkPayload( 138,  18, 16.3f, 14.9f), // Sapsa shelfclaw         // Western La Noscea
-            416 => new MapLinkPayload( 152,   5, 29.1f, 12.4f), // sylpheed snarl          // East Shroud
+            416 => new MapLinkPayload( 152,   5, 28.2f, 12.9f), // sylpheed snarl          // East Shroud
             417 => new MapLinkPayload( 146,  23, 18.9f, 22.9f), // Amalj'aa thaumaturge    // Southern Thanalan
             418 => new MapLinkPayload( 156,  25, 11.4f, 12.9f), // 5th Cohort eques        // Mor Dhona
-            419 => new MapLinkPayload( 138,  18, 16.3f, 14.9f), // Sapsa elbst             // Western La Noscea
+            419 => new MapLinkPayload( 138,  18, 16.1f, 14.9f), // Sapsa elbst             // Western La Noscea
             420 => new MapLinkPayload( 156,  25, 28.7f,  6.9f), // hippogryph              // Mor Dhona
             421 => new MapLinkPayload( 138,  18, 20.4f, 19.1f), // trenchtooth Sahagin     // Western La Noscea
             422 => new MapLinkPayload( 155,  53, 33.9f, 21.6f), // Natalan windtalon       // Coerthas Central Highlands

@@ -5,12 +5,12 @@ using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
 using ECommons;
-using ECommons.Throttlers;
 using ECommons.Automation;
 using ECommons.Automation.LegacyTaskManager;
 using ECommons.Commands;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
+using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 ///using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
@@ -22,6 +22,7 @@ using Lumina.Excel.Sheets;
 using System;
 using System.Linq;
 using ZodiacBuddy.Stages.Atma.Data;
+using static FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.Delegates;
 using RelicNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RelicNote;
 
 namespace ZodiacBuddy.Stages.Atma;
@@ -37,10 +38,13 @@ internal class AtmaManager : IDisposable {
     }
     /// <inheritdoc/>
     public void Dispose() {
+        Svc.Framework.Update -= WaitForBetweenAreasAndExecute;
+        Svc.Framework.Update -= MonitorPathingAndDismount;
         Service.AddonLifecycle.UnregisterListener(ReceiveEventDetour);
     }
-    public bool NavReady
-    => VNavmesh.Nav.IsReady();
+    public bool IsPathGenerating => VNavmesh.Nav.PathfindInProgress();
+    public bool IsPathing => VNavmesh.Path.IsRunning();
+    public bool NavReady => VNavmesh.Nav.IsReady();
     private readonly TaskManager TaskManager = new();
     private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
         var closestAetheryteId = 0u;
@@ -196,7 +200,6 @@ internal class AtmaManager : IDisposable {
 
             if (!Service.Configuration.IsAtmaManagerEnabled)
                 return;
-
             if (!awaitingTeleportFromRelicBookClick)
             {
                 awaitingTeleportFromRelicBookClick = true;
@@ -205,21 +208,84 @@ internal class AtmaManager : IDisposable {
             return;
         }
     }
+    private bool monitoringPathing = false;
+    private DateTime unmountStartTime;
+    private void EnqueueUnmountAfterNav()
+    {
+        if (monitoringPathing) return;
+        monitoringPathing = true;
+        unmountStartTime = DateTime.Now;
+        Svc.Framework.Update += MonitorPathingAndDismount;
+    }
+    private unsafe void MonitorPathingAndDismount(IFramework _)
+    {
+        if (VNavmesh.Nav.PathfindInProgress() || VNavmesh.Path.IsRunning())
+            return;
+        monitoringPathing = false;
+        Svc.Framework.Update -= MonitorPathingAndDismount;
+        EnqueueDismount();
+    }
+    public bool CanAct
+    {
+        get
+        {
+            var player = Svc.ClientState.LocalPlayer;
+            if (player == null || player.IsDead || Player.IsAnimationLocked)
+                return false;
+            var c = Svc.Condition;
+            if (c[ConditionFlag.BetweenAreas]
+                || c[ConditionFlag.BetweenAreas51]
+                || c[ConditionFlag.OccupiedInQuestEvent]
+                || c[ConditionFlag.OccupiedSummoningBell]
+                || c[ConditionFlag.BeingMoved]
+                || c[ConditionFlag.Casting]
+                || c[ConditionFlag.Casting87]
+                || c[ConditionFlag.Jumping]
+                || c[ConditionFlag.Jumping61]
+                || c[ConditionFlag.LoggingOut]
+                || c[ConditionFlag.Occupied]
+                || c[ConditionFlag.Occupied39]
+                || c[ConditionFlag.Unconscious]
+                || c[ConditionFlag.ExecutingGatheringAction]
+                || c[ConditionFlag.MountOrOrnamentTransition]
+                || c[85] && !c[ConditionFlag.Gathering])
+                return false;
+            return true;
+        }
+    }
+    private unsafe void EnqueueDismount()
+    {
+        var am = ActionManager.Instance();
+        TaskManager.Enqueue(() =>
+        {
+            if (Svc.Condition[ConditionFlag.Mounted])
+                am->UseAction(ActionType.Mount, 0);
+        }, "Dismount");
+        TaskManager.Enqueue(() => !Svc.Condition[ConditionFlag.InFlight] && CanAct, 1000, "Wait for not in flight");
+        TaskManager.Enqueue(() =>
+        {
+            if (Svc.Condition[ConditionFlag.Mounted])
+                am->UseAction(ActionType.Mount, 0);
+        }, "Dismount 2");
+        TaskManager.Enqueue(() => !Svc.Condition[ConditionFlag.Mounted] && CanAct, 1000, "Wait for dismount");
+        TaskManager.Enqueue(() =>
+        {
+            if (!Svc.Condition[ConditionFlag.Mounted])
+                TaskManager.DelayNextImmediate(500);
+        });
+    }
     private unsafe void EnqueueMountUp()
     {
         TaskManager.Enqueue(() => NavReady);
-
         if (Svc.Condition[ConditionFlag.Mounted])
         {
             Service.PluginLog.Debug("Already mounted, skipping EnqueueMountUp.");
             return;
         }
-
         TaskManager.Enqueue(() =>
         {
             var am = ActionManager.Instance();
             const uint rouletteId = 9;
-
             if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
             {
                 Service.PluginLog.Debug("Attempting to use mount roulette...");
@@ -236,32 +302,26 @@ internal class AtmaManager : IDisposable {
             {
                 Service.PluginLog.Warning("Mount roulette unavailable.");
             }
-
-            return true; // Continue to next task regardless
+            return true;
         });
-
         TaskManager.Enqueue(() => Svc.Condition[ConditionFlag.Mounted]);
-
         TaskManager.Enqueue(() =>
         {
             Chat.ExecuteCommand("/vnav flyflag");
-
+            EnqueueUnmountAfterNav();
             hasEnteredBetweenAreas = false;
             awaitingTeleportFromRelicBookClick = false;
             hasQueuedMountTasks = false;
-
             return true;
         });
     }
     private bool hasQueuedMountTasks = false;
     private bool hasEnteredBetweenAreas = false;
     private bool awaitingTeleportFromRelicBookClick = false;
-
     internal void WaitForBetweenAreasAndExecute(IFramework framework)
     {
         if (!Service.Configuration.IsAtmaManagerEnabled || !awaitingTeleportFromRelicBookClick)
             return;
-
         if (!hasEnteredBetweenAreas)
         {
             if (Svc.Condition[ConditionFlag.BetweenAreas])
@@ -275,6 +335,7 @@ internal class AtmaManager : IDisposable {
             {
                 hasQueuedMountTasks = true;
                 EnqueueMountUp();
+                
             }
         }
     }
