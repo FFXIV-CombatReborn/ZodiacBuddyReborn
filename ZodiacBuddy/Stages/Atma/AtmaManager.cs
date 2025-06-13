@@ -10,19 +10,26 @@ using ECommons.Automation.LegacyTaskManager;
 using ECommons.Commands;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
+using ECommons.Logging;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 ///using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+//using FFXIVClientStructs.FFXIV.Common.Math;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ImGuiNET;
 using Lumina.Excel.Sheets;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using ZodiacBuddy.Stages.Atma.Data;
+using ZodiacBuddy.Stages.Atma.Movement;
+using ZodiacBuddy.Stages.Atma.Unstuck;
 using static FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.Delegates;
+using static FFXIVClientStructs.Havok.Animation.Deform.Skinning.hkaMeshBinding;
 using RelicNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RelicNote;
 
 namespace ZodiacBuddy.Stages.Atma;
@@ -33,19 +40,49 @@ internal class AtmaManager : IDisposable {
     /// <summary>
     /// Initializes a new instance of the <see cref="AtmaManager"/> class.
     /// </summary>
-    public AtmaManager() {
+    
+    private Vector3 _lastPosition;
+    private DateTime _lastMovement = DateTime.Now;
+    private const float MinMovementDistance = 0.2f; // Adjust as needed
+    private const float NavResetThreshold = 3f;     // Seconds before declaring stuck
+    private readonly AdvancedUnstuck _advancedUnstuck;
+    public AtmaManager() 
+    {
+        _advancedUnstuck = new AdvancedUnstuck();
+        _advancedUnstuck.OnUnstuckComplete += OnUnstuckCompleteHandler;
+
         Service.AddonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "RelicNoteBook", ReceiveEventDetour);
+        Svc.Framework.Update += _advancedUnstuck.RunningUpdate;
+        Svc.Framework.Update += MonitorUnstuck;
     }
     /// <inheritdoc/>
     public void Dispose() {
+        Svc.Framework.Update -= MonitorUnstuck;
         Svc.Framework.Update -= WaitForBetweenAreasAndExecute;
         Svc.Framework.Update -= MonitorPathingAndDismount;
+        Svc.Framework.Update -= _advancedUnstuck.RunningUpdate;
         Service.AddonLifecycle.UnregisterListener(ReceiveEventDetour);
     }
+
     public bool IsPathGenerating => VNavmesh.Nav.PathfindInProgress();
     public bool IsPathing => VNavmesh.Path.IsRunning();
     public bool NavReady => VNavmesh.Nav.IsReady();
+    private List<Vector3>? _lastKnownPath;
     private readonly TaskManager TaskManager = new();
+    private void OnUnstuckCompleteHandler()
+    {
+        Service.PluginLog.Debug("Unstuck finished, restarting navigation.");
+        RestartNavigationToTarget();
+    }
+    private void RestartNavigationToTarget()
+    {
+        VNavmesh.Path.Stop();
+
+        Chat.ExecuteCommand($"/vnavmesh moveflag");
+
+        monitoringPathing = true;
+        Svc.Framework.Update += MonitorPathingAndDismount;
+    }
     private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
         var closestAetheryteId = 0u;
         var closestDistance = double.MaxValue;
@@ -217,14 +254,57 @@ internal class AtmaManager : IDisposable {
         unmountStartTime = DateTime.Now;
         Svc.Framework.Update += MonitorPathingAndDismount;
     }
+    private void MoveToWithTracking(Vector3 destination)
+    {
+        _lastKnownPath = new List<Vector3> { destination };
+        VNavmesh.Path.MoveTo(_lastKnownPath, false);
+    }
+    private void MonitorUnstuck(IFramework _)
+    {
+        Service.PluginLog.Debug($"MonitorUnstuck running. Pathing: {IsPathing}, UnstuckRunning: {_advancedUnstuck.IsRunning}");
+
+        if (!IsPathing || _advancedUnstuck.IsRunning || Player.Object == null)
+            return;
+
+        var now = DateTime.Now;
+        var currentPos = Player.Object.Position;
+
+        if (Vector3.Distance(_lastPosition, currentPos) >= MinMovementDistance)
+        {
+            _lastPosition = currentPos;
+            _lastMovement = now;
+        }
+        else if ((now - _lastMovement).TotalSeconds > NavResetThreshold)
+        {
+            Service.PluginLog.Debug($"AdvancedUnstuck: stuck detected. Moved {Vector3.Distance(_lastPosition, currentPos)} yalms in {(now - _lastMovement).TotalSeconds:F1} seconds.");
+            restartNavAfterUnstuck = true;
+            _advancedUnstuck.Start();
+            _lastMovement = now; // Prevent spamming Start
+        }
+    }
+    private bool restartNavAfterUnstuck = false;
     private unsafe void MonitorPathingAndDismount(IFramework _)
     {
+        if (_advancedUnstuck.IsRunning)
+            return;
         if (VNavmesh.Nav.PathfindInProgress() || VNavmesh.Path.IsRunning())
+            return;
+        if (!monitoringPathing)
             return;
         monitoringPathing = false;
         Svc.Framework.Update -= MonitorPathingAndDismount;
-        EnqueueDismount();
+        if (restartNavAfterUnstuck)
+        {
+            restartNavAfterUnstuck = false;
+            // Start the new pathing here, e.g.:
+            RestartNavigationToTarget();
+        }
+        else
+        {
+            EnqueueDismount();
+        }
     }
+
     public bool CanAct
     {
         get
@@ -255,19 +335,41 @@ internal class AtmaManager : IDisposable {
     }
     private unsafe void EnqueueDismount()
     {
+        if (_advancedUnstuck.IsRunning)
+        {
+            // Delay dismount until unstuck finishes
+            Service.PluginLog.Debug("Skipping dismount because AdvancedUnstuck is active.");
+            return;
+        }
         var am = ActionManager.Instance();
         TaskManager.Enqueue(() =>
         {
             if (Svc.Condition[ConditionFlag.Mounted])
                 am->UseAction(ActionType.Mount, 0);
         }, "Dismount");
-        TaskManager.Enqueue(() => !Svc.Condition[ConditionFlag.InFlight] && CanAct, 1000, "Wait for not in flight");
+        TaskManager.Enqueue(() =>
+        {
+            if (_advancedUnstuck.IsRunning)
+            {
+                Service.PluginLog.Debug("Skipping Wait for not in flight because AdvancedUnstuck active.");
+                return true; // skip wait, let the task complete immediately
+            }
+            return !Svc.Condition[ConditionFlag.InFlight] && CanAct;
+        }, 1000, "Wait for not in flight");
         TaskManager.Enqueue(() =>
         {
             if (Svc.Condition[ConditionFlag.Mounted])
                 am->UseAction(ActionType.Mount, 0);
         }, "Dismount 2");
-        TaskManager.Enqueue(() => !Svc.Condition[ConditionFlag.Mounted] && CanAct, 1000, "Wait for dismount");
+        TaskManager.Enqueue(() =>
+        {
+            if (_advancedUnstuck.IsRunning)
+            {
+                Service.PluginLog.Debug("Skipping Wait for dismount because AdvancedUnstuck active.");
+                return true;
+            }
+            return !Svc.Condition[ConditionFlag.Mounted] && CanAct;
+        }, 1000, "Wait for dismount");
         TaskManager.Enqueue(() =>
         {
             if (!Svc.Condition[ConditionFlag.Mounted])
@@ -304,7 +406,15 @@ internal class AtmaManager : IDisposable {
             }
             return true;
         });
-        TaskManager.Enqueue(() => Svc.Condition[ConditionFlag.Mounted]);
+        TaskManager.Enqueue(() =>
+        {
+            if (_advancedUnstuck.IsRunning)
+            {
+                Service.PluginLog.Debug("Skipping wait for mounted because AdvancedUnstuck active.");
+                return true;
+            }
+            return Svc.Condition[ConditionFlag.Mounted];
+        });
         TaskManager.Enqueue(() =>
         {
             Chat.ExecuteCommand("/vnav flyflag");
