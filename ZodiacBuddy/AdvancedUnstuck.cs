@@ -24,9 +24,9 @@ public sealed class AdvancedUnstuck : IDisposable
     private const double CheckExpiration = 1.0;
     private const float MinMovementDistance = 2.0f;
 
-    // Placeholder cooldown and threshold values (replace with your own config or constants)
-    private const double NavResetCooldown = 5.0;  // seconds cooldown before checking unstuck again
-    private const double NavResetThreshold = 3.0; // seconds stuck before triggering unstuck
+    // Placeholder cooldown and threshold values (TODO: Set config within UI element)
+    private const double NavResetCooldown = 5.0;  // Checking for Unstuck
+    private const double NavResetThreshold = 3.0; // Triggering Unstuck
 
     private readonly OverrideMovement _movementController = new();
     private DateTime _lastMovement;
@@ -85,15 +85,12 @@ public sealed class AdvancedUnstuck : IDisposable
             // ...but not fast enough: unstuck
             else if (now.Subtract(_lastMovement).TotalSeconds > NavResetThreshold)
             {
-                // Replace logging with your own logging system or remove
-                Console.WriteLine($"Advanced Unstuck: the character is stuck. Moved {Vector3.Distance(_lastPosition, Player.Position)} yalms in {now.Subtract(_lastMovement).TotalSeconds} seconds.");
                 Start();
             }
         }
         // Not generating path and not moving for 2 consecutive framework updates: unstuck
         else if (_lastWasFailure)
         {
-            Console.WriteLine($"Advanced Unstuck: vnavmesh failure detected.");
             Start();
         }
 
@@ -121,7 +118,7 @@ public sealed class AdvancedUnstuck : IDisposable
 
             _movementController.DesiredPosition = newPosition;
 
-            // 🔧 Fix: Use correct MoveTo overload
+            // Navmash Moveto
             VNavmesh.Path.MoveTo(new List<Vector3> { newPosition }, false);
 
             _lastPosition = Player.Object?.Position ?? Vector3.Zero;
@@ -151,7 +148,7 @@ public sealed class AdvancedUnstuck : IDisposable
             Svc.Framework.Update -= RunningUpdate;
             PluginLog.Debug("[ZodiacBuddy] AdvancedUnstuck: Movement override stopped.");
 
-            // ✅ Trigger post-unstuck callback
+            // Post-Unstuck
             OnUnstuckCompleted?.Invoke();
         }
     }

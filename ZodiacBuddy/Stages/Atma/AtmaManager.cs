@@ -261,8 +261,6 @@ internal class AtmaManager : IDisposable {
     }
     private void MonitorUnstuck(IFramework _)
     {
-        Service.PluginLog.Debug($"MonitorUnstuck running. Pathing: {IsPathing}, UnstuckRunning: {_advancedUnstuck.IsRunning}");
-
         if (!IsPathing || _advancedUnstuck.IsRunning || Player.Object == null)
             return;
 
@@ -276,10 +274,9 @@ internal class AtmaManager : IDisposable {
         }
         else if ((now - _lastMovement).TotalSeconds > NavResetThreshold)
         {
-            Service.PluginLog.Debug($"AdvancedUnstuck: stuck detected. Moved {Vector3.Distance(_lastPosition, currentPos)} yalms in {(now - _lastMovement).TotalSeconds:F1} seconds.");
             restartNavAfterUnstuck = true;
             _advancedUnstuck.Start();
-            _lastMovement = now; // Prevent spamming Start
+            _lastMovement = now; // No Spam
         }
     }
     private bool restartNavAfterUnstuck = false;
@@ -296,7 +293,7 @@ internal class AtmaManager : IDisposable {
         if (restartNavAfterUnstuck)
         {
             restartNavAfterUnstuck = false;
-            // Start the new pathing here, e.g.:
+            // Restart Pathing After Unstuck
             RestartNavigationToTarget();
         }
         else
