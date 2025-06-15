@@ -215,7 +215,10 @@ internal class AtmaManager : IDisposable {
         {
             Service.Plugin.PrintMessage($"Copied {selectedTarget.Name} to clipboard.");
             ImGui.SetClipboardText(selectedTarget.Name);
+
         }
+        // Always update internal display, regardless of whether clipboard copy is enabled
+        Service.Plugin.TargetWindow?.SetTarget(selectedTarget.Name);
 
         var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
         if (aetheryteId == 0)

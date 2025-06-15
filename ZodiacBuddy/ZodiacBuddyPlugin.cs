@@ -17,12 +17,13 @@ namespace ZodiacBuddy;
 /// </summary>
 public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     private const string Command = "/pzodiac";
-
+    
     private readonly AtmaManager animusBuddy;
     private readonly NovusManager novusManager;
     private readonly BraveManager braveManager;
-
     private readonly WindowSystem windowSystem;
+    internal TargetInfoWindow TargetWindow = new();
+
     private readonly ConfigWindow configWindow;
     private readonly AtmaManager atma;
     /// <summary>
@@ -33,13 +34,14 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         pluginInterface.Create<Service>();
 
         ECommons.ECommonsMain.Init(pluginInterface, this);
-
         Service.Plugin = this;
         Service.Configuration = pluginInterface.GetPluginConfig() as PluginConfiguration ?? new PluginConfiguration();
 
         this.windowSystem = new WindowSystem("ZodiacBuddy");
-        this.windowSystem.AddWindow(this.configWindow = new ConfigWindow());
 
+        this.windowSystem.AddWindow(this.configWindow = new ConfigWindow());
+        TargetWindow = new TargetInfoWindow();
+        windowSystem.AddWindow(TargetWindow);
         Service.Interface.UiBuilder.OpenConfigUi += this.OnOpenConfigUi;
         Service.Interface.UiBuilder.Draw += this.windowSystem.Draw;
 
@@ -60,7 +62,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         Svc.Framework.Update -= atma.WaitForBetweenAreasAndExecute;
         atma.Dispose();
         Service.CommandManager.RemoveHandler(Command);
-
+        windowSystem.RemoveWindow(TargetWindow);
         Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;
         Service.Interface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
 
