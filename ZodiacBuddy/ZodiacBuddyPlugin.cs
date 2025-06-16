@@ -3,6 +3,7 @@ using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using ZodiacBuddy.TargetWindow;
 using ZodiacBuddy.BonusLight;
 using ZodiacBuddy.Stages.Atma;
 using ZodiacBuddy.Stages.Brave;
