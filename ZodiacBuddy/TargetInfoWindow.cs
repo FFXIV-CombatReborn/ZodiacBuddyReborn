@@ -39,51 +39,82 @@ namespace ZodiacBuddy.TargetWindow
                 TargetingHelper.StoredTargetId = id;
         }
 
+        public Vector3? CurrentTargetPosition { get; private set; }
+
+        private void StartPathingToCurrentTarget()
+        {
+            if (CurrentTargetPosition != null)
+            {
+                // Path to exact enemy coordinates
+                var pos = CurrentTargetPosition.Value;
+
+                if (VNavmesh.Path.IsRunning())
+                {
+                    Service.ChatGui.Print("Already pathing.");
+                    return;
+                }
+
+                string command = $"/vnav moveto {pos.X:F3} {pos.Y:F3} {pos.Z:F3}";
+                Service.CommandManager.ProcessCommand(command);
+                Service.ChatGui.Print($"Pathing to {CurrentTarget} at ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})");
+            }
+            else
+            {
+                // Fallback to map flag
+                if (VNavmesh.Path.IsRunning())
+                {
+                    Service.ChatGui.Print("Already pathing.");
+                    return;
+                }
+
+                string fallbackCommand = "/vnav moveflag";
+                Service.CommandManager.ProcessCommand(fallbackCommand);
+                Service.ChatGui.Print("No enemy found nearby. Pathing to map flag.");
+            }
+        }
+
         public void UpdateCurrentTargetInfo()
         {
-            // Step 1: If a target name was manually set, track by that name
+            // If we've locked to a name and are still waiting to find a matching live object
             if (!string.IsNullOrEmpty(CurrentTarget))
             {
-                // Step 2: Check if the stored GameObjectId is still valid
-                if (CurrentTargetId != 0)
+                var matchingNpc = Svc.Objects
+                    .Where(obj => obj.ObjectKind == ObjectKind.BattleNpc &&
+                                  obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase))
+                    .FirstOrDefault();
+
+                if (matchingNpc != null)
                 {
-                    var stillExists = Svc.Objects
-                        .Any(obj => obj is IBattleChara bc && bc.GameObjectId == CurrentTargetId);
+                    var newId = matchingNpc.GameObjectId;
 
-                    if (!stillExists)
+                    if (CurrentTargetId != newId)
                     {
-                        // Target has despawned or died — clear it
-                        CurrentTargetId = 0;
-                        TargetingHelper.StoredTargetId = 0;
+                        CurrentTargetId = newId;
+                        CurrentTargetPosition = matchingNpc.Position;
+                        TargetingHelper.StoredTargetId = newId;
                     }
-                }
 
-                // Step 3: If no valid GameObjectId, try to find another enemy with the same name
-                if (CurrentTargetId == 0)
+                    return; // Keep displaying name even if ID or position hasn't changed
+                }
+                else
                 {
-                    var matchingNpc = Svc.Objects
-                        .FirstOrDefault(obj => obj.ObjectKind == ObjectKind.BattleNpc &&
-                                               obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase));
-
-                    if (matchingNpc != null)
-                    {
-                        CurrentTargetId = matchingNpc.GameObjectId;
-                        TargetingHelper.StoredTargetId = matchingNpc.GameObjectId;
-                    }
+                    // Target is not present in world
+                    CurrentTargetId = 0;
+                    CurrentTargetPosition = null;
+                    return;
                 }
-
-                return; // Done — we either updated or couldn't find a new match yet
             }
 
-            // Step 4: Fallback to current in-game target if no name has been set manually
+            // Fallback: use actual in-game target if no name has been set
             var target = Svc.Targets.Target;
             if (target != null && target.ObjectKind == ObjectKind.BattleNpc)
             {
                 CurrentTarget = SmartCaseHelper.SmartTitleCase(target.Name.TextValue.Trim());
                 CurrentTargetId = target.GameObjectId;
-                TargetingHelper.StoredTargetId = target.GameObjectId;
+                CurrentTargetPosition = target.Position;
             }
         }
+
 
         public override void Draw()
         {
@@ -96,6 +127,11 @@ namespace ZodiacBuddy.TargetWindow
             {
                 ImGui.Text($"Current Target: {CurrentTarget}");
                 ImGui.Text($"GameObjectId: {CurrentTargetId}");
+                if (CurrentTargetPosition.HasValue)
+                {
+                    var pos = CurrentTargetPosition.Value;
+                    ImGui.Text($"Position: X: {pos.X:F1}, Y: {pos.Y:F1}, Z: {pos.Z:F1}");
+                }
 
                 if (ImGui.Button("Retarget by ID"))
                 {
@@ -104,7 +140,10 @@ namespace ZodiacBuddy.TargetWindow
                         Service.ChatGui.PrintError($"Could not retarget enemy by ID.");
                     }
                 }
-
+                if (ImGui.Button("Path to Target"))
+                {
+                    StartPathingToCurrentTarget();
+                }
                 ImGui.SameLine();
 
                 if (ImGui.Button("Retarget by Name"))
