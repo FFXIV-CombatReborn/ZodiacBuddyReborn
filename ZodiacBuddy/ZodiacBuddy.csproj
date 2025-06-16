@@ -1,22 +1,19 @@
 <Project Sdk="Dalamud.NET.Sdk/12.0.2">
-  <PropertyGroup>
-    <Authors>daemitus, MidoriKami</Authors>
-    <Description>Complete your Zodiac relic with style.</Description>
-    <PackageProjectUrl>https://github.com/MidoriKami/ZodiacBuddy</PackageProjectUrl>
-    <Version>1.1.1.2</Version>
-  </PropertyGroup>
+	<PropertyGroup>
+		<Authors>daemitus, MidoriKami</Authors>
+		<Description>Complete your Zodiac relic with style.</Description>
+		<PackageProjectUrl>https://github.com/MidoriKami/ZodiacBuddy</PackageProjectUrl>
+		<Version>1.1.1.2</Version>
 
-  <ItemGroup>
-    <PackageReference Include="LitJWT" Version="2.0.2" />
-  </ItemGroup>
-
-  <ItemGroup>
-	 <ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
-  </ItemGroup>
-
-  <PropertyGroup>
 		<UseWindowsForms>true</UseWindowsForms>
-  </PropertyGroup>
-	
-	
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="LitJWT" Version="2.0.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
+	</ItemGroup>
 </Project>

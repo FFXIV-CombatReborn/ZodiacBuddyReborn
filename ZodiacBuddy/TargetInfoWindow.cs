@@ -18,8 +18,8 @@ namespace ZodiacBuddy.TargetWindow
 {
     internal class TargetInfoWindow : Window
     {
-        public string? CurrentTarget { get; private set; }
-        public ulong CurrentTargetId { get; private set; }
+        public string? CurrentTarget;
+        public ulong CurrentTargetId;
         public bool IsPathing => VNavmesh.Path.IsRunning();
         
         
@@ -30,94 +30,122 @@ namespace ZodiacBuddy.TargetWindow
         }
 
         // Call this to set the target name from BraveBook click or similar
-        public void SetTarget(string targetName)
+        public void SetTarget(string name, ulong id = 0)
         {
-            CurrentTarget = targetName;
-            CurrentTargetId = 0; // reset id, will update after lookup
+            CurrentTarget = SmartCaseHelper.SmartTitleCase(name);
+            CurrentTargetId = id;
+
+            if (id != 0)
+                TargetingHelper.StoredTargetId = id;
         }
 
         public void UpdateCurrentTargetInfo()
         {
-            // Do nothing if we already have a name but are waiting for the enemy to appear
-            if (!string.IsNullOrEmpty(CurrentTarget) && CurrentTargetId == 0)
+            // Step 1: If a target name was manually set, track by that name
+            if (!string.IsNullOrEmpty(CurrentTarget))
             {
-                // Try to find matching NPC to get GameObjectId
-                var matchingNpc = Svc.Objects
-                    .Where(obj => obj.ObjectKind == ObjectKind.BattleNpc &&
-                                  obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase))
-                    .FirstOrDefault();
-
-                if (matchingNpc != null)
+                // Step 2: Check if the stored GameObjectId is still valid
+                if (CurrentTargetId != 0)
                 {
-                    CurrentTargetId = matchingNpc.GameObjectId;
+                    var stillExists = Svc.Objects
+                        .Any(obj => obj is IBattleChara bc && bc.GameObjectId == CurrentTargetId);
+
+                    if (!stillExists)
+                    {
+                        // Target has despawned or died — clear it
+                        CurrentTargetId = 0;
+                        TargetingHelper.StoredTargetId = 0;
+                    }
                 }
 
-                return; // Keep showing the name even if enemy isn't found yet
+                // Step 3: If no valid GameObjectId, try to find another enemy with the same name
+                if (CurrentTargetId == 0)
+                {
+                    var matchingNpc = Svc.Objects
+                        .FirstOrDefault(obj => obj.ObjectKind == ObjectKind.BattleNpc &&
+                                               obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase));
+
+                    if (matchingNpc != null)
+                    {
+                        CurrentTargetId = matchingNpc.GameObjectId;
+                        TargetingHelper.StoredTargetId = matchingNpc.GameObjectId;
+                    }
+                }
+
+                return; // Done — we either updated or couldn't find a new match yet
             }
 
-            // If no name has been set from book, fallback to actual in-game target
+            // Step 4: Fallback to current in-game target if no name has been set manually
             var target = Svc.Targets.Target;
             if (target != null && target.ObjectKind == ObjectKind.BattleNpc)
             {
                 CurrentTarget = SmartCaseHelper.SmartTitleCase(target.Name.TextValue.Trim());
                 CurrentTargetId = target.GameObjectId;
+                TargetingHelper.StoredTargetId = target.GameObjectId;
             }
         }
+
         public override void Draw()
         {
             UpdateCurrentTargetInfo();
-
-            if (!string.IsNullOrEmpty(CurrentTarget))
+            if (string.IsNullOrWhiteSpace(CurrentTarget))
+            {
+                ImGui.Text("No target selected.");
+            }
+            else
             {
                 ImGui.Text($"Current Target: {CurrentTarget}");
+                ImGui.Text($"GameObjectId: {CurrentTargetId}");
 
-                if (CurrentTargetId != 0)
-                    ImGui.Text($"GameObjectId: {CurrentTargetId}");
-                else
-                    ImGui.TextColored(ImGuiColors.DalamudYellow, "Waiting for enemy to appear...");
+                if (ImGui.Button("Retarget by ID"))
+                {
+                    if (!TargetingHelper.TryTargetById(CurrentTargetId))
+                    {
+                        Service.ChatGui.PrintError($"Could not retarget enemy by ID.");
+                    }
+                }
+
+                ImGui.SameLine();
 
                 if (ImGui.Button("Retarget by Name"))
                 {
-                    bool success = TargetingHelper.TryTargetByName(CurrentTarget!); // Null-forgiving operator used safely here
-                    if (!success)
+                    if (!string.IsNullOrEmpty(CurrentTarget) && !TargetingHelper.TryTargetByName(CurrentTarget))
                     {
                         Service.ChatGui.PrintError($"Could not retarget enemy named '{CurrentTarget}'.");
                     }
                 }
             }
-            else
-            {
-                ImGui.Text("No target selected.");
-            }
 
             ImGui.Separator();
 
+            // Status
             Vector4 color;
             string status;
 
             if (!VNavmesh.Nav.IsReady())
             {
                 status = "Navmesh Not Ready";
-                color = new Vector4(1f, 0f, 0f, 1f);
+                color = new Vector4(1f, 0f, 0f, 1f); // Red
             }
             else if (VNavmesh.Nav.PathfindInProgress())
             {
                 status = "Generating Path...";
-                color = new Vector4(1f, 1f, 0f, 1f);
+                color = new Vector4(1f, 1f, 0f, 1f); // Yellow
             }
             else if (VNavmesh.Path.IsRunning())
             {
                 status = "Pathing";
-                color = new Vector4(0f, 1f, 0f, 1f);
+                color = new Vector4(0f, 1f, 0f, 1f); // Green
             }
             else
             {
                 status = "Idle";
-                color = new Vector4(1f, 1f, 1f, 1f);
+                color = new Vector4(1f, 1f, 1f, 1f); // White
             }
 
             ImGui.TextColored(color, $"Status: {status}");
         }
+
 
     }
 }
