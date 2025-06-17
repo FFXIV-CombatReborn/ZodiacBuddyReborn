@@ -21,8 +21,9 @@ namespace ZodiacBuddy.TargetWindow
         public string? CurrentTarget;
         public ulong CurrentTargetId;
         public bool IsPathing => VNavmesh.Path.IsRunning();
-        
-        
+        private bool pendingPathing = false;
+        private DateTime lastPathingTime = DateTime.MinValue;
+
 
         public TargetInfoWindow() : base("ZodiacBuddy Target Info", ImGuiWindowFlags.AlwaysAutoResize)
         {
@@ -43,69 +44,74 @@ namespace ZodiacBuddy.TargetWindow
 
         private void StartPathingToCurrentTarget()
         {
+            if (VNavmesh.Path.IsRunning())
+            {
+                Service.ChatGui.Print("Already pathing. Will retry after current path completes.");
+                pendingPathing = true;
+                return;
+            }
+
             if (CurrentTargetPosition != null)
             {
-                // Path to exact enemy coordinates
                 var pos = CurrentTargetPosition.Value;
-
-                if (VNavmesh.Path.IsRunning())
-                {
-                    Service.ChatGui.Print("Already pathing.");
-                    return;
-                }
-
                 string command = $"/vnav moveto {pos.X:F3} {pos.Y:F3} {pos.Z:F3}";
                 Service.CommandManager.ProcessCommand(command);
                 Service.ChatGui.Print($"Pathing to {CurrentTarget} at ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})");
+
+                lastPathingTime = DateTime.Now;
+                pendingPathing = false;
             }
             else
             {
-                // Fallback to map flag
-                if (VNavmesh.Path.IsRunning())
-                {
-                    Service.ChatGui.Print("Already pathing.");
-                    return;
-                }
-
                 string fallbackCommand = "/vnav moveflag";
                 Service.CommandManager.ProcessCommand(fallbackCommand);
                 Service.ChatGui.Print("No enemy found nearby. Pathing to map flag.");
+
+                lastPathingTime = DateTime.Now;
+                pendingPathing = false;
             }
         }
 
         public void UpdateCurrentTargetInfo()
         {
-            // If we've locked to a name and are still waiting to find a matching live object
             if (!string.IsNullOrEmpty(CurrentTarget))
             {
-                var matchingNpc = Svc.Objects
+                // Store previous ID to detect a change
+                var previousId = CurrentTargetId;
+
+                var match = Svc.Objects
                     .Where(obj => obj.ObjectKind == ObjectKind.BattleNpc &&
                                   obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(obj => Vector3.Distance(obj.Position, Svc.ClientState.LocalPlayer?.Position ?? Vector3.Zero))
                     .FirstOrDefault();
 
-                if (matchingNpc != null)
+                if (match != null)
                 {
-                    var newId = matchingNpc.GameObjectId;
-
-                    if (CurrentTargetId != newId)
+                    if (match.GameObjectId != CurrentTargetId)
                     {
-                        CurrentTargetId = newId;
-                        CurrentTargetPosition = matchingNpc.Position;
-                        TargetingHelper.StoredTargetId = newId;
-                    }
+                        // New enemy found
+                        CurrentTargetId = match.GameObjectId;
+                        CurrentTargetPosition = match.Position;
 
-                    return; // Keep displaying name even if ID or position hasn't changed
+                        TargetingHelper.StoredTargetId = CurrentTargetId;
+                        StartPathingToCurrentTarget(); // 🔥 auto-path on change
+                    }
                 }
                 else
                 {
-                    // Target is not present in world
-                    CurrentTargetId = 0;
-                    CurrentTargetPosition = null;
-                    return;
+                    // Enemy not found, clear ID and coords
+                    if (CurrentTargetId != 0 || CurrentTargetPosition != null)
+                    {
+                        CurrentTargetId = 0;
+                        CurrentTargetPosition = null;
+                        StartPathingToCurrentTarget(); // 🔁 fallback to map flag
+                    }
                 }
+
+                return;
             }
 
-            // Fallback: use actual in-game target if no name has been set
+            // No custom target from book, use in-game target as fallback
             var target = Svc.Targets.Target;
             if (target != null && target.ObjectKind == ObjectKind.BattleNpc)
             {
@@ -116,8 +122,13 @@ namespace ZodiacBuddy.TargetWindow
         }
 
 
+
         public override void Draw()
         {
+            if (pendingPathing && !VNavmesh.Path.IsRunning() && (DateTime.Now - lastPathingTime).TotalSeconds > 2)
+            {
+                StartPathingToCurrentTarget();
+            }
             UpdateCurrentTargetInfo();
             if (string.IsNullOrWhiteSpace(CurrentTarget))
             {
