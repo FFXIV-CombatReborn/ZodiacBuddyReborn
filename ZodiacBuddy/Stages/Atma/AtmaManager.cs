@@ -379,13 +379,16 @@ internal class AtmaManager : IDisposable {
     private unsafe void EnqueueMountUp()
     {
         TaskManager.Enqueue(() => NavReady);
-        if (Svc.Condition[ConditionFlag.Mounted])
-        {
-            Service.PluginLog.Debug("Already mounted, skipping EnqueueMountUp.");
-            return;
-        }
+
+        // Don't skip — just evaluate inside the task
         TaskManager.Enqueue(() =>
         {
+            if (Svc.Condition[ConditionFlag.Mounted])
+            {
+                Service.PluginLog.Debug("Already mounted, skipping mount roulette use.");
+                return true;
+            }
+
             var am = ActionManager.Instance();
             const uint rouletteId = 9;
             if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
@@ -406,6 +409,7 @@ internal class AtmaManager : IDisposable {
             }
             return true;
         });
+
         TaskManager.Enqueue(() =>
         {
             if (_advancedUnstuck.IsRunning)
@@ -415,6 +419,7 @@ internal class AtmaManager : IDisposable {
             }
             return Svc.Condition[ConditionFlag.Mounted];
         });
+
         TaskManager.Enqueue(() =>
         {
             Chat.ExecuteCommand("/vnav flyflag");
@@ -425,6 +430,7 @@ internal class AtmaManager : IDisposable {
             return true;
         });
     }
+
     private bool hasQueuedMountTasks = false;
     private bool hasEnteredBetweenAreas = false;
     private bool awaitingTeleportFromRelicBookClick = false;
