@@ -13,7 +13,7 @@
   "CategoryTags": [
     "Utility"
   ],
-  "IsTestingExclusive": true,
+  "IsTestingExclusive": false,
   "IconUrl": "https://raw.githubusercontent.com/FFXIV-CombatReborn/RebornAssets/main/IconAssets/ZBR_Icon.png",
   "Punchline": "Finally a reason to open your Relic Book on purpose!",
   "AcceptsFeedback": true
