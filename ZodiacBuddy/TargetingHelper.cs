@@ -104,7 +104,6 @@ public static unsafe class TargetingHelper
                 float distance = Vector3.Distance(playerPos, obj.Position);
                 if (distance > 40f)
                 {
-                    Service.PluginLog.Debug($"Target found, but too far ({distance:F1}y > 40y). Skipping auto-target.");
                     return;
                 }
 
@@ -116,6 +115,27 @@ public static unsafe class TargetingHelper
                     Service.PluginLog.Debug($"Auto-targeted enemy: {battleChara.Name.TextValue} at {distance:F1}y");
                 }
 
+                return;
+            }
+        }
+    }
+    public static unsafe void PromoteAggroingEnemy()
+    {
+        var player = Svc.ClientState.LocalPlayer;
+        if (player == null)
+            return;
+
+        var playerId = player.GameObjectId;
+
+        foreach (var obj in Svc.Objects)
+        {
+            if (obj is IBattleChara battleChara
+                && battleChara.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc
+                && battleChara.CurrentHp > 0
+                && battleChara.TargetObjectId == playerId)
+            {
+                TargetSystem.Instance()->Target = (GameObject*)battleChara.Address;
+                Service.PluginLog.Debug($"Aggroing enemy '{battleChara.Name.TextValue}' promoted to hard target.");
                 return;
             }
         }

@@ -113,9 +113,16 @@ public unsafe class OverrideMovement : IDisposable
 
             result->Forward = 2f;
             result->Left = 0f;
-            result->Up = -1f; // DownMovement
+            result->Up = -1f; // Optionally add a small Up value to help with ledges
             return;
         }
+        //if ((IgnoreUserInput || result->Forward == 0 && result->Left == 0 && result->Up == 0) && DirectionToDestination(true) is var relDir && relDir != null)
+        //{
+        //    var dir = relDir.Value.h.ToDirection();
+        //    result->Forward = dir.Y;
+        //    result->Left = dir.X;
+        //    result->Up = relDir.Value.v.Rad;
+        //}
     }
 
     private (Angle h, Angle v)? DirectionToDestination(bool allowVertical)
@@ -147,7 +154,7 @@ public unsafe class OverrideMovement : IDisposable
 
     private void LogInformation(string message)
     {
-        // TODO: Add Debugging if something breaks
+        // Replace this with your preferred logging system or Dalamud.Logger.Log
         PluginLog.Information(message);
     }
 }
