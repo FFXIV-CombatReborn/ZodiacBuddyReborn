@@ -20,16 +20,19 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 //using FFXIVClientStructs.FFXIV.Common.Math;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ImGuiNET;
+using ImGuizmoNET;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using ZodiacBuddy.Stages.Atma.Data;
 using ZodiacBuddy.Stages.Atma.Movement;
 using ZodiacBuddy.Stages.Atma.Unstuck;
 using static FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.Delegates;
 using static FFXIVClientStructs.Havok.Animation.Deform.Skinning.hkaMeshBinding;
+using static ZodiacBuddy.TargetWindow.TargetInfoWindow;
 using RelicNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RelicNote;
 
 namespace ZodiacBuddy.Stages.Atma;
@@ -46,6 +49,7 @@ internal class AtmaManager : IDisposable {
     private const float MinMovementDistance = 0.2f; // Adjust as needed
     private const float NavResetThreshold = 3f;     // Seconds before declaring stuck
     private readonly AdvancedUnstuck _advancedUnstuck;
+    public static System.Action? OnFallbackPathIssued;
     public AtmaManager() 
     {
         _advancedUnstuck = new AdvancedUnstuck();
@@ -249,8 +253,10 @@ internal class AtmaManager : IDisposable {
         }
     }
     private bool monitoringPathing = false;
+
     private DateTime unmountStartTime;
-    private void EnqueueUnmountAfterNav()
+
+    public unsafe void EnqueueUnmountAfterNav()
     {
         if (monitoringPathing) return;
         monitoringPathing = true;
@@ -262,14 +268,36 @@ internal class AtmaManager : IDisposable {
         _lastKnownPath = new List<Vector3> { destination };
         VNavmesh.Path.MoveTo(_lastKnownPath, false);
     }
+    private bool monitoringUnstuck = false;
+
+    private void StartUnstuckMonitoring()
+    {
+        if (!monitoringUnstuck)
+        {
+            monitoringUnstuck = true;
+
+            // Don't reset _lastMovement here — only reset _lastPosition
+            _lastPosition = Player.Object?.Position ?? Vector3.Zero;
+
+            // Let AdvancedUnstuck.Check handle _lastMovement timing
+            Svc.Framework.Update += MonitorUnstuck;
+        }
+    }
+
+    private void StopUnstuckMonitoring()
+    {
+        if (monitoringUnstuck)
+        {
+            Svc.Framework.Update -= MonitorUnstuck;
+            monitoringUnstuck = false;
+        }
+    }
     private void MonitorUnstuck(IFramework _)
     {
         if (!IsPathing || _advancedUnstuck.IsRunning || Player.Object == null)
             return;
-
         var now = DateTime.Now;
         var currentPos = Player.Object.Position;
-
         if (Vector3.Distance(_lastPosition, currentPos) >= MinMovementDistance)
         {
             _lastPosition = currentPos;
@@ -277,9 +305,10 @@ internal class AtmaManager : IDisposable {
         }
         else if ((now - _lastMovement).TotalSeconds > NavResetThreshold)
         {
+            Service.PluginLog.Debug($"AdvancedUnstuck: stuck detected. Moved {Vector3.Distance(_lastPosition, currentPos)} yalms in {(now - _lastMovement).TotalSeconds:F1} seconds.");
             restartNavAfterUnstuck = true;
             _advancedUnstuck.Start();
-            _lastMovement = now; // No Spam
+            _lastMovement = now; // Prevent spamming Start
         }
     }
     private bool restartNavAfterUnstuck = false;
@@ -287,21 +316,39 @@ internal class AtmaManager : IDisposable {
     {
         if (_advancedUnstuck.IsRunning)
             return;
+
         if (VNavmesh.Nav.PathfindInProgress() || VNavmesh.Path.IsRunning())
             return;
+
         if (!monitoringPathing)
             return;
+
         monitoringPathing = false;
         Svc.Framework.Update -= MonitorPathingAndDismount;
+
         if (restartNavAfterUnstuck)
         {
             restartNavAfterUnstuck = false;
-            // Restart Pathing After Unstuck
             RestartNavigationToTarget();
         }
         else
         {
             EnqueueDismount();
+
+            // 🔓 Unlock TargetInfoWindow now that navigation is fully complete
+            if (Service.Plugin.TargetWindow?.State == TargetingState.AwaitingAtmaPathing)
+            {
+                Service.PluginLog.Debug("[ZodiacBuddy] Scheduling delayed AtmaManager pathing unlock...");
+                TaskManager.Enqueue(() =>
+                {
+                    // Delay to allow TargetInfoWindow.UpdateCurrentTargetInfo to run before unlocking
+                    Task.Delay(250).ContinueWith(_ =>
+                    {
+                        Service.PluginLog.Debug("[ZodiacBuddy] Unlocking TargetInfoWindow pathing after short delay.");
+                        Service.Plugin.TargetWindow.OnAtmaPathingComplete();
+                    });
+                });
+            }
         }
     }
 
@@ -421,8 +468,9 @@ internal class AtmaManager : IDisposable {
         });
 
         TaskManager.Enqueue(() =>
-        {
+        {   
             Chat.ExecuteCommand("/vnav flyflag");
+            
             EnqueueUnmountAfterNav();
             hasEnteredBetweenAreas = false;
             awaitingTeleportFromRelicBookClick = false;

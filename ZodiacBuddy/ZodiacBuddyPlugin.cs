@@ -18,12 +18,13 @@ namespace ZodiacBuddy;
 /// </summary>
 public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     private const string Command = "/pzodiac";
-    
+    private const string TargetWindowCommand = "/ztarget";
+
     private readonly AtmaManager animusBuddy;
     private readonly NovusManager novusManager;
     private readonly BraveManager braveManager;
     private readonly WindowSystem windowSystem;
-    internal TargetInfoWindow TargetWindow = new();
+    internal TargetInfoWindow TargetWindow;
 
     private readonly ConfigWindow configWindow;
     private readonly AtmaManager atma;
@@ -50,12 +51,19 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
             HelpMessage = "Open a window to edit various settings.",
             ShowInHelp = true,
         });
+        Service.CommandManager.AddHandler(TargetWindowCommand, new CommandInfo(OnTargetWindowCommand)
+        {
+            HelpMessage = "Open the ZodiacBuddy target tracking window.",
+            ShowInHelp = true,
+        });
 
         Service.BonusLightManager = new BonusLightManager();
         this.animusBuddy = new AtmaManager();
         this.novusManager = new NovusManager();
         this.braveManager = new BraveManager();
         this.atma = new AtmaManager();
+        AtmaManager.OnFallbackPathIssued = () => atma.EnqueueUnmountAfterNav();
+
     }
 
     /// <inheritdoc/>
@@ -64,6 +72,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         atma.Dispose();
         Service.CommandManager.RemoveHandler(Command);
         windowSystem.RemoveWindow(TargetWindow);
+        Service.CommandManager.RemoveHandler(TargetWindowCommand);
         Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;
         Service.Interface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
 
@@ -73,7 +82,10 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         Service.BonusLightManager.Dispose();
         ECommons.ECommonsMain.Dispose();
     }
-
+    private void OnTargetWindowCommand(string command, string arguments)
+    {
+        TargetWindow.IsOpen = true;
+    }
     /// <summary>
     /// Print a message.
     /// </summary>
