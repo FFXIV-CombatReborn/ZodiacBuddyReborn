@@ -23,8 +23,6 @@ public sealed class AdvancedUnstuck : IDisposable
     private const double UnstuckDuration = 1.0;
     private const double CheckExpiration = 1.0;
     private const float MinMovementDistance = 2.0f;
-
-    // Placeholder cooldown and threshold values (replace with your own config or constants)
     private const double NavResetCooldown = 5.0;  // seconds cooldown before checking unstuck again
     private const double NavResetThreshold = 3.0; // seconds stuck before triggering unstuck
 
@@ -85,8 +83,6 @@ public sealed class AdvancedUnstuck : IDisposable
             // ...but not fast enough: unstuck
             else if (now.Subtract(_lastMovement).TotalSeconds > NavResetThreshold)
             {
-                // Replace logging with your own logging system or remove
-                Console.WriteLine($"Advanced Unstuck: the character is stuck. Moved {Vector3.Distance(_lastPosition, Player.Position)} yalms in {now.Subtract(_lastMovement).TotalSeconds} seconds.");
                 Start();
             }
         }
@@ -121,7 +117,7 @@ public sealed class AdvancedUnstuck : IDisposable
 
             _movementController.DesiredPosition = newPosition;
 
-            // 🔧 Fix: Use correct MoveTo overload
+            //Use correct MoveTo overload
             VNavmesh.Path.MoveTo(new List<Vector3> { newPosition }, false);
 
             _lastPosition = Player.Object?.Position ?? Vector3.Zero;
@@ -151,7 +147,7 @@ public sealed class AdvancedUnstuck : IDisposable
             Svc.Framework.Update -= RunningUpdate;
             PluginLog.Debug("[ZodiacBuddy] AdvancedUnstuck: Movement override stopped.");
 
-            // ✅ Trigger post-unstuck callback
+            //Trigger post-unstuck callback
             OnUnstuckCompleted?.Invoke();
         }
     }

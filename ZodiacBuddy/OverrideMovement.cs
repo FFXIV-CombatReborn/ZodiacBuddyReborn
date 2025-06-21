@@ -116,13 +116,6 @@ public unsafe class OverrideMovement : IDisposable
             result->Up = -1f; // Optionally add a small Up value to help with ledges
             return;
         }
-        //if ((IgnoreUserInput || result->Forward == 0 && result->Left == 0 && result->Up == 0) && DirectionToDestination(true) is var relDir && relDir != null)
-        //{
-        //    var dir = relDir.Value.h.ToDirection();
-        //    result->Forward = dir.Y;
-        //    result->Left = dir.X;
-        //    result->Up = relDir.Value.v.Rad;
-        //}
     }
 
     private (Angle h, Angle v)? DirectionToDestination(bool allowVertical)
