@@ -50,6 +50,46 @@ internal class AtmaManager : IDisposable {
     private const float NavResetThreshold = 3f;     // Seconds before declaring stuck
     private readonly AdvancedUnstuck _advancedUnstuck;
     public static System.Action? OnFallbackPathIssued;
+    private bool monitoringPathing = false;
+    private DateTime unmountStartTime;
+    private bool monitoringUnstuck = false;
+    private bool restartNavAfterUnstuck = false;
+    private bool hasQueuedMountTasks = false;
+    private bool hasEnteredBetweenAreas = false;
+    private bool awaitingTeleportFromRelicBookClick = false;
+    public bool IsPathGenerating => VNavmesh.Nav.PathfindInProgress();
+    public bool IsPathing => VNavmesh.Path.IsRunning();
+    public bool NavReady => VNavmesh.Nav.IsReady();
+    private List<Vector3>? _lastKnownPath;
+    private readonly TaskManager TaskManager = new();
+    public bool CanAct
+    {
+        get
+        {
+            var player = Svc.ClientState.LocalPlayer;
+            if (player == null || player.IsDead || Player.IsAnimationLocked)
+                return false;
+            var c = Svc.Condition;
+            if (c[ConditionFlag.BetweenAreas]
+                || c[ConditionFlag.BetweenAreas51]
+                || c[ConditionFlag.OccupiedInQuestEvent]
+                || c[ConditionFlag.OccupiedSummoningBell]
+                || c[ConditionFlag.BeingMoved]
+                || c[ConditionFlag.Casting]
+                || c[ConditionFlag.Casting87]
+                || c[ConditionFlag.Jumping]
+                || c[ConditionFlag.Jumping61]
+                || c[ConditionFlag.LoggingOut]
+                || c[ConditionFlag.Occupied]
+                || c[ConditionFlag.Occupied39]
+                || c[ConditionFlag.Unconscious]
+                || c[ConditionFlag.ExecutingGatheringAction]
+                || c[ConditionFlag.MountOrOrnamentTransition]
+                || c[85] && !c[ConditionFlag.Gathering])
+                return false;
+            return true;
+        }
+    }
     public AtmaManager() 
     {
         _advancedUnstuck = new AdvancedUnstuck();
@@ -66,26 +106,6 @@ internal class AtmaManager : IDisposable {
         Svc.Framework.Update -= MonitorPathingAndDismount;
         Svc.Framework.Update -= _advancedUnstuck.RunningUpdate;
         Service.AddonLifecycle.UnregisterListener(ReceiveEventDetour);
-    }
-
-    public bool IsPathGenerating => VNavmesh.Nav.PathfindInProgress();
-    public bool IsPathing => VNavmesh.Path.IsRunning();
-    public bool NavReady => VNavmesh.Nav.IsReady();
-    private List<Vector3>? _lastKnownPath;
-    private readonly TaskManager TaskManager = new();
-    private void OnUnstuckCompleteHandler()
-    {
-        Service.PluginLog.Debug("Unstuck finished, restarting navigation.");
-        RestartNavigationToTarget();
-    }
-    private void RestartNavigationToTarget()
-    {
-        VNavmesh.Path.Stop();
-
-        Chat.ExecuteCommand($"/vnavmesh moveflag");
-
-        monitoringPathing = true;
-        Svc.Framework.Update += MonitorPathingAndDismount;
     }
     private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
         var closestAetheryteId = 0u;
@@ -133,17 +153,14 @@ internal class AtmaManager : IDisposable {
                 closestAetheryteId = aetheryte.RowId;
             }
         }
-
         return closestAetheryteId;
     }
-
     private unsafe void Teleport(uint aetheryteId) {
         if (Service.ClientState.LocalPlayer == null) return;
         if (Service.Configuration.DisableTeleport) return;
 
         Telepo.Instance()->Teleport(aetheryteId, 0);
     }
-
     private unsafe void ReceiveEventDetour(AddonEvent type, AddonArgs args) {
         try {
             if (args is AddonReceiveEventArgs receiveEventArgs && (AtkEventType)receiveEventArgs.AtkEventType is AtkEventType.ButtonClick) {
@@ -154,7 +171,6 @@ internal class AtmaManager : IDisposable {
             Service.PluginLog.Error(ex, "Exception during hook: AddonRelicNotebook.ReceiveEvent:Click");
         }
     }
-
     private unsafe void ReceiveEvent(AddonRelicNoteBook* addon, AtkEvent* eventData)
     {
         if (!EzThrottler.Throttle("RelicNoteClick", 500))
@@ -241,7 +257,6 @@ internal class AtmaManager : IDisposable {
         {
             Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
             this.Teleport(aetheryteId);
-
             if (!Service.Configuration.IsAtmaManagerEnabled)
                 return;
             if (!awaitingTeleportFromRelicBookClick)
@@ -250,46 +265,6 @@ internal class AtmaManager : IDisposable {
                 Svc.Framework.Update += WaitForBetweenAreasAndExecute;
             }
             return;
-        }
-    }
-    private bool monitoringPathing = false;
-
-    private DateTime unmountStartTime;
-
-    public unsafe void EnqueueUnmountAfterNav()
-    {
-        if (monitoringPathing) return;
-        monitoringPathing = true;
-        unmountStartTime = DateTime.Now;
-        Svc.Framework.Update += MonitorPathingAndDismount;
-    }
-    private void MoveToWithTracking(Vector3 destination)
-    {
-        _lastKnownPath = new List<Vector3> { destination };
-        VNavmesh.Path.MoveTo(_lastKnownPath, false);
-    }
-    private bool monitoringUnstuck = false;
-
-    private void StartUnstuckMonitoring()
-    {
-        if (!monitoringUnstuck)
-        {
-            monitoringUnstuck = true;
-
-            // Don't reset _lastMovement here — only reset _lastPosition
-            _lastPosition = Player.Object?.Position ?? Vector3.Zero;
-
-            // Let AdvancedUnstuck.Check handle _lastMovement timing
-            Svc.Framework.Update += MonitorUnstuck;
-        }
-    }
-
-    private void StopUnstuckMonitoring()
-    {
-        if (monitoringUnstuck)
-        {
-            Svc.Framework.Update -= MonitorUnstuck;
-            monitoringUnstuck = false;
         }
     }
     private void MonitorUnstuck(IFramework _)
@@ -311,21 +286,94 @@ internal class AtmaManager : IDisposable {
             _lastMovement = now; // Prevent spamming Start
         }
     }
-    private bool restartNavAfterUnstuck = false;
+    internal void WaitForBetweenAreasAndExecute(IFramework framework)
+    {
+        if (!Service.Configuration.IsAtmaManagerEnabled || !awaitingTeleportFromRelicBookClick)
+            return;
+        if (!hasEnteredBetweenAreas)
+        {
+            if (Svc.Condition[ConditionFlag.BetweenAreas])
+            {
+                hasEnteredBetweenAreas = true;
+            }
+        }
+        else
+        {
+            if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady() && !hasQueuedMountTasks)
+            {
+                hasQueuedMountTasks = true;
+                EnqueueMountUp();
+            }
+        }
+    }
+    private unsafe void EnqueueMountUp()
+    {
+        TaskManager.Enqueue(() => NavReady);
+
+        // Don't skip mounting
+        TaskManager.Enqueue(() =>
+        {
+            if (Svc.Condition[ConditionFlag.Mounted])
+            {
+                Service.PluginLog.Debug("Already mounted, skipping mount roulette use.");
+                return true;
+            }
+            var am = ActionManager.Instance();
+            const uint rouletteId = 9;
+            if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
+            {
+                Service.PluginLog.Debug("Attempting to use mount roulette...");
+                if (am->UseAction(ActionType.GeneralAction, rouletteId))
+                {
+                    Service.PluginLog.Debug("Using mount roulette.");
+                }
+                else
+                {
+                    Service.PluginLog.Warning("Failed to use mount roulette.");
+                }
+            }
+            else
+            {
+                Service.PluginLog.Warning("Mount roulette unavailable.");
+            }
+            return true;
+        });
+        TaskManager.Enqueue(() =>
+        {
+            if (_advancedUnstuck.IsRunning)
+            {
+                Service.PluginLog.Debug("Skipping wait for mounted because AdvancedUnstuck active.");
+                return true;
+            }
+            return Svc.Condition[ConditionFlag.Mounted];
+        });
+        TaskManager.Enqueue(() =>
+        {   
+            Chat.ExecuteCommand("/vnav flyflag");
+            EnqueueUnmountAfterNav();
+            hasEnteredBetweenAreas = false;
+            awaitingTeleportFromRelicBookClick = false;
+            hasQueuedMountTasks = false;
+            return true;
+        });
+    }
+    public unsafe void EnqueueUnmountAfterNav()
+    {
+        if (monitoringPathing) return;
+        monitoringPathing = true;
+        unmountStartTime = DateTime.Now;
+        Svc.Framework.Update += MonitorPathingAndDismount;
+    }
     private unsafe void MonitorPathingAndDismount(IFramework _)
     {
         if (_advancedUnstuck.IsRunning)
             return;
-
         if (VNavmesh.Nav.PathfindInProgress() || VNavmesh.Path.IsRunning())
             return;
-
         if (!monitoringPathing)
             return;
-
         monitoringPathing = false;
         Svc.Framework.Update -= MonitorPathingAndDismount;
-
         if (restartNavAfterUnstuck)
         {
             restartNavAfterUnstuck = false;
@@ -334,8 +382,7 @@ internal class AtmaManager : IDisposable {
         else
         {
             EnqueueDismount();
-
-            // 🔓 Unlock TargetInfoWindow now that navigation is fully complete
+            //Unlock TargetInfoWindow now that navigation is fully complete
             if (Service.Plugin.TargetWindow?.State == TargetingState.AwaitingAtmaPathing)
             {
                 Service.PluginLog.Debug("[ZodiacBuddy] Scheduling delayed AtmaManager pathing unlock...");
@@ -351,34 +398,12 @@ internal class AtmaManager : IDisposable {
             }
         }
     }
-
-    public bool CanAct
+    private void RestartNavigationToTarget()
     {
-        get
-        {
-            var player = Svc.ClientState.LocalPlayer;
-            if (player == null || player.IsDead || Player.IsAnimationLocked)
-                return false;
-            var c = Svc.Condition;
-            if (c[ConditionFlag.BetweenAreas]
-                || c[ConditionFlag.BetweenAreas51]
-                || c[ConditionFlag.OccupiedInQuestEvent]
-                || c[ConditionFlag.OccupiedSummoningBell]
-                || c[ConditionFlag.BeingMoved]
-                || c[ConditionFlag.Casting]
-                || c[ConditionFlag.Casting87]
-                || c[ConditionFlag.Jumping]
-                || c[ConditionFlag.Jumping61]
-                || c[ConditionFlag.LoggingOut]
-                || c[ConditionFlag.Occupied]
-                || c[ConditionFlag.Occupied39]
-                || c[ConditionFlag.Unconscious]
-                || c[ConditionFlag.ExecutingGatheringAction]
-                || c[ConditionFlag.MountOrOrnamentTransition]
-                || c[85] && !c[ConditionFlag.Gathering])
-                return false;
-            return true;
-        }
+        VNavmesh.Path.Stop();
+        Chat.ExecuteCommand($"/vnavmesh moveflag");
+        monitoringPathing = true;
+        Svc.Framework.Update += MonitorPathingAndDismount;
     }
     private unsafe void EnqueueDismount()
     {
@@ -423,84 +448,33 @@ internal class AtmaManager : IDisposable {
                 TaskManager.DelayNextImmediate(500);
         });
     }
-    private unsafe void EnqueueMountUp()
+    private void OnUnstuckCompleteHandler()
     {
-        TaskManager.Enqueue(() => NavReady);
-
-        // Don't skip — just evaluate inside the task
-        TaskManager.Enqueue(() =>
-        {
-            if (Svc.Condition[ConditionFlag.Mounted])
-            {
-                Service.PluginLog.Debug("Already mounted, skipping mount roulette use.");
-                return true;
-            }
-
-            var am = ActionManager.Instance();
-            const uint rouletteId = 9;
-            if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
-            {
-                Service.PluginLog.Debug("Attempting to use mount roulette...");
-                if (am->UseAction(ActionType.GeneralAction, rouletteId))
-                {
-                    Service.PluginLog.Debug("Using mount roulette.");
-                }
-                else
-                {
-                    Service.PluginLog.Warning("Failed to use mount roulette.");
-                }
-            }
-            else
-            {
-                Service.PluginLog.Warning("Mount roulette unavailable.");
-            }
-            return true;
-        });
-
-        TaskManager.Enqueue(() =>
-        {
-            if (_advancedUnstuck.IsRunning)
-            {
-                Service.PluginLog.Debug("Skipping wait for mounted because AdvancedUnstuck active.");
-                return true;
-            }
-            return Svc.Condition[ConditionFlag.Mounted];
-        });
-
-        TaskManager.Enqueue(() =>
-        {   
-            Chat.ExecuteCommand("/vnav flyflag");
-            
-            EnqueueUnmountAfterNav();
-            hasEnteredBetweenAreas = false;
-            awaitingTeleportFromRelicBookClick = false;
-            hasQueuedMountTasks = false;
-            return true;
-        });
+        Service.PluginLog.Debug("Unstuck finished, restarting navigation.");
+        RestartNavigationToTarget();
     }
-
-    private bool hasQueuedMountTasks = false;
-    private bool hasEnteredBetweenAreas = false;
-    private bool awaitingTeleportFromRelicBookClick = false;
-    internal void WaitForBetweenAreasAndExecute(IFramework framework)
+    private void MoveToWithTracking(Vector3 destination)
     {
-        if (!Service.Configuration.IsAtmaManagerEnabled || !awaitingTeleportFromRelicBookClick)
-            return;
-        if (!hasEnteredBetweenAreas)
+        _lastKnownPath = new List<Vector3> { destination };
+        VNavmesh.Path.MoveTo(_lastKnownPath, false);
+    }
+    private void StartUnstuckMonitoring()
+    {
+        if (!monitoringUnstuck)
         {
-            if (Svc.Condition[ConditionFlag.BetweenAreas])
-            {
-                hasEnteredBetweenAreas = true;
-            }
+            monitoringUnstuck = true;
+            //reset _lastPosition
+            _lastPosition = Player.Object?.Position ?? Vector3.Zero;
+            //AdvancedUnstuck.Check handle _lastMovement timing
+            Svc.Framework.Update += MonitorUnstuck;
         }
-        else
+    }
+    private void StopUnstuckMonitoring()
+    {
+        if (monitoringUnstuck)
         {
-            if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady() && !hasQueuedMountTasks)
-            {
-                hasQueuedMountTasks = true;
-                EnqueueMountUp();
-                
-            }
+            Svc.Framework.Update -= MonitorUnstuck;
+            monitoringUnstuck = false;
         }
     }
     static unsafe bool IsOwnerNode(AtkEventTarget* target, AtkComponentCheckBox* checkbox)

@@ -29,6 +29,7 @@ namespace ZodiacBuddy.TargetWindow
         private DateTime lastPathingTime = DateTime.MinValue;
         private bool CompletedObjective => TargetingHelper.KillCount >= 3;
         private bool rsrEnabled = false;
+        private bool fallbackSuppressedPermanently = false;
         public Vector3? CurrentTargetPosition { get; private set; }
         private DateTime fallbackSuppressionUntil = DateTime.MinValue;
         
@@ -57,6 +58,9 @@ namespace ZodiacBuddy.TargetWindow
 
             if (CompletedObjective)
             {
+                fallbackSuppressedPermanently = true; // Hard FallBack block
+                pendingPathing = false;
+
                 if (State != TargetingState.AwaitingAtmaPathing)
                 {
                     Service.PluginLog.Debug("Reached 3 kills. Locking logic and clearing target.");
@@ -75,7 +79,7 @@ namespace ZodiacBuddy.TargetWindow
                     }
                 }
 
-                // Promote soft-targeted enemy to hard target if we're still in combat
+                // Handle post-kill combat case
                 if (Svc.Condition[ConditionFlag.InCombat])
                 {
                     TargetingHelper.PromoteAggroingEnemy();
@@ -84,23 +88,23 @@ namespace ZodiacBuddy.TargetWindow
                     if (!rsrEnabled)
                     {
                         Service.PluginLog.Debug("Re-enabling RSR due to post-kill aggro.");
-                        TaskManager.Enqueue(new Func<bool?>(() =>
+                        TaskManager.Enqueue(() =>
                         {
                             Service.CommandManager.ProcessCommand("/rotation manual");
                             rsrEnabled = true;
                             return true;
-                        }));
+                        });
                     }
                 }
                 else if (rsrEnabled)
                 {
-                    Service.PluginLog.Debug("Combat over after promoted enemies — disabling RSR (final cleanup).");
+                    Service.PluginLog.Debug("Combat over after promoted enemies.");
                     Service.CommandManager.ProcessCommand("/rotation off");
                     rsrEnabled = false;
                     pendingPathing = false;
                 }
             }
-            
+
             if (pendingPathing && !VNavmesh.Path.IsRunning() && (DateTime.Now - lastPathingTime).TotalSeconds > 2)
             {
                 StartPathingToCurrentTarget();
@@ -109,13 +113,14 @@ namespace ZodiacBuddy.TargetWindow
             UpdateCurrentTargetInfo();
             if (!CompletedObjective)
             {
-                // Retry auto-targeting outside the ID-switch logic, to catch edge cases
+                // Retry auto-targeting outside the ID-switch logic.
                 TargetingHelper.AutoTargetStoredIdIfVisible();
             }
         }
         
         public void SetTarget(string name, ulong id = 0)
         {
+            fallbackSuppressedPermanently = false;
             // Don't allow setting a target while active
             if (State == TargetingState.Active)
                 return;
@@ -139,7 +144,8 @@ namespace ZodiacBuddy.TargetWindow
         // This is called by AtmaManager once /vnav moveflag finishes
         public void OnAtmaPathingComplete()
         {
-            Service.PluginLog.Debug("Pathing complete, unlocking targeting logic.");
+            fallbackSuppressedPermanently = false;
+            Service.PluginLog.Debug("Atma Pathing complete, unlocking targeting logic.");
             State = TargetingState.Active;
             pendingPathing = true;
             fallbackSuppressionUntil = DateTime.Now.AddSeconds(0.5); // Suppress fallback briefly
@@ -159,7 +165,6 @@ namespace ZodiacBuddy.TargetWindow
         {
             if (VNavmesh.Path.IsRunning())
             {
-                Service.PluginLog.Debug("Already pathing. Will retry after current path completes.");
                 pendingPathing = true;
                 return;
             }
@@ -167,8 +172,6 @@ namespace ZodiacBuddy.TargetWindow
             if (CurrentTargetPosition != null)
             {
                 var pos = CurrentTargetPosition.Value;
-                Service.PluginLog.Debug($"StartPathingToCurrentTarget → Pos: ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1}) | TargetID: {CurrentTargetId}");
-
                 string command = $"/vnav moveto {pos.X:F3} {pos.Y:F3} {pos.Z:F3}";
                 Service.CommandManager.ProcessCommand(command);
                 Service.ChatGui.Print($"Pathing to {CurrentTarget} at ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})");
@@ -185,14 +188,13 @@ namespace ZodiacBuddy.TargetWindow
                     return;
                 }
 
-                if (TargetingHelper.KillCount >= 3)
-                {
-                    Service.PluginLog.Debug("Objective already complete. Skipping fallback pathing.");
+                if (fallbackSuppressedPermanently || TargetingHelper.KillCount >= 3 || Svc.Condition[ConditionFlag.InCombat])
+                {;
+                    pendingPathing = false;
                     return;
                 }
 
                 string fallbackCommand = "/vnav moveflag";
-                Service.PluginLog.Debug("No valid target position. Using fallback flag.");
                 Service.CommandManager.ProcessCommand(fallbackCommand);
                 Service.ChatGui.Print("No enemy found nearby. Pathing to map flag.");
 
@@ -231,8 +233,6 @@ namespace ZodiacBuddy.TargetWindow
                     {
                         if (match.GameObjectId != CurrentTargetId)
                         {
-                            Service.PluginLog.Debug($"Switching to new enemy instance. Old ID: {CurrentTargetId}, New ID: {match.GameObjectId}");
-
                             TargetingHelper.RegisterKillIfMatches(CurrentTargetId, CurrentTarget ?? "");
                             CurrentTargetId = match.GameObjectId;
                             TargetingHelper.StoredTargetId = match.GameObjectId;
@@ -263,7 +263,8 @@ namespace ZodiacBuddy.TargetWindow
                         TargetingHelper.StoredTargetId = 0;
                         TargetingHelper.ResetAutoTargetFlag();
 
-                        pendingPathing = true;
+                        if (!CompletedObjective)
+                            pendingPathing = true;  //Pathing if kill objective not complete
                     }
                 }
                 return;
