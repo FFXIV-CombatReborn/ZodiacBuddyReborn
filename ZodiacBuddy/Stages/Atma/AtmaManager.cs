@@ -382,20 +382,25 @@ internal class AtmaManager : IDisposable {
         else
         {
             EnqueueDismount();
-            //Unlock TargetInfoWindow now that navigation is fully complete
-            if (Service.Plugin.TargetWindow?.State == TargetingState.AwaitingAtmaPathing)
+
+            TaskManager.Enqueue(() =>
             {
-                Service.PluginLog.Debug("[ZodiacBuddy] Scheduling delayed AtmaManager pathing unlock...");
-                TaskManager.Enqueue(() =>
+                if (Svc.Condition[ConditionFlag.Mounted])
                 {
-                    // Delay to allow TargetInfoWindow.UpdateCurrentTargetInfo to run before unlocking
-                    Task.Delay(250).ContinueWith(_ =>
-                    {
-                        Service.PluginLog.Debug("[ZodiacBuddy] Unlocking TargetInfoWindow pathing after short delay.");
-                        Service.Plugin.TargetWindow.OnAtmaPathingComplete();
-                    });
-                });
-            }
+                    Service.PluginLog.Debug("[ZodiacBuddy] Player still mounted after dismount tasks. Waiting another tick.");
+                    return false;
+                }
+
+                if (VNavmesh.Path.IsRunning())
+                {
+                    Service.PluginLog.Debug("[ZodiacBuddy] Navmesh is still running after dismount tasks. Waiting another tick.");
+                    return false;
+                }
+
+                Service.PluginLog.Debug("[ZodiacBuddy] Player dismounted and navmesh idle. Unlocking pathing.");
+                Service.Plugin.TargetWindow.OnAtmaPathingComplete();
+                return true;
+            });
         }
     }
     private void RestartNavigationToTarget()

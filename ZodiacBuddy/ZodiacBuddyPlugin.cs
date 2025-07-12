@@ -35,7 +35,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     public ZodiacBuddyPlugin(IDalamudPluginInterface pluginInterface) {
         pluginInterface.Create<Service>();
 
-        ECommons.ECommonsMain.Init(pluginInterface, this);
+        ECommons.ECommonsMain.Init(pluginInterface, this, Module.DalamudReflector);
         Service.Plugin = this;
         Service.Configuration = pluginInterface.GetPluginConfig() as PluginConfiguration ?? new PluginConfiguration();
 

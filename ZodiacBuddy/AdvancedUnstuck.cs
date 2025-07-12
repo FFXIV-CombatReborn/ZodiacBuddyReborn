@@ -56,7 +56,6 @@ public sealed class AdvancedUnstuck : IDisposable
         var lastCheck = _lastCheck;
         _lastCheck = now;
 
-        // Tracking wasn't active for 1 second or was reset: restart tracking from the current position
         if (now.Subtract(lastCheck).TotalSeconds > CheckExpiration)
         {
             _lastPosition = Player.Position;
@@ -64,36 +63,28 @@ public sealed class AdvancedUnstuck : IDisposable
             _lastWasFailure = false;
             return AdvancedUnstuckCheckResult.Pass;
         }
-
-        // vnavmesh is generating path: update current position
         if (isPathGenerating)
         {
             _lastPosition = Player.Position;
             _lastMovement = now;
         }
-        // vnavmesh is moving...
         else if (isPathing)
         {
-            // ...and quite fast: update current position
             if (Vector3.Distance(_lastPosition, Player.Position) >= MinMovementDistance)
             {
                 _lastPosition = Player.Object.Position;
                 _lastMovement = now;
             }
-            // ...but not fast enough: unstuck
             else if (now.Subtract(_lastMovement).TotalSeconds > NavResetThreshold)
             {
                 Start();
             }
         }
-        // Not generating path and not moving for 2 consecutive framework updates: unstuck
         else if (_lastWasFailure)
         {
             Console.WriteLine($"Advanced Unstuck: vnavmesh failure detected.");
             Start();
         }
-
-        // Not generating path and not moving: remember that fact and exit main loop
         _lastWasFailure = !isPathGenerating && !isPathing;
         return IsRunning ? AdvancedUnstuckCheckResult.Fail : _lastWasFailure ? AdvancedUnstuckCheckResult.Wait : AdvancedUnstuckCheckResult.Pass;
     }

@@ -174,13 +174,6 @@ internal class ConfigWindow : Window {
             Service.Configuration.Save();
         }
 
-        bool enabled = Service.Configuration.IsAtmaManagerEnabled;
-        if (ImGui.Checkbox("Enable Atma Manager", ref enabled))
-        {
-            Service.Configuration.IsAtmaManagerEnabled = enabled;
-            Service.Configuration.Save();
-        }
-
         var braveCopy = Service.Configuration.BraveCopyTarget;
         if (ImGui.Checkbox("Copy name of target to clipboard automatically", ref braveCopy)) {
             Service.Configuration.BraveCopyTarget = braveCopy;
