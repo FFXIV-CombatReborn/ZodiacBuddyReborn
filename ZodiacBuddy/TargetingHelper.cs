@@ -7,6 +7,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Common.Math;
 using System;
+using System.Collections.Generic;
 using static FFXIVClientStructs.FFXIV.Client.Game.UI.MobHunt;
 
 namespace ZodiacBuddy.Helpers;
@@ -17,6 +18,7 @@ public static unsafe class TargetingHelper
     private static int _killCount = 0;
     private static ulong _lastKilledId = 0;
     private static string? _killTrackingTarget = null;
+    private static readonly HashSet<ulong> _registeredKills = new();
     public static int KillCount => _killCount;
     public static void RegisterKillIfMatches(ulong killedId, string currentTargetName)
     {
@@ -24,8 +26,9 @@ public static unsafe class TargetingHelper
             return;
 
         if (_killTrackingTarget.Equals(currentTargetName, StringComparison.OrdinalIgnoreCase)
-            && killedId != 0 && killedId != _lastKilledId)
+            && killedId != 0 && !_registeredKills.Contains(killedId))
         {
+            _registeredKills.Add(killedId);
             _killCount++;
             _lastKilledId = killedId;
             Service.PluginLog.Debug($"Registered kill for enemy '{currentTargetName}'. Total: {_killCount}");
@@ -36,6 +39,7 @@ public static unsafe class TargetingHelper
         _killTrackingTarget = targetName;
         _killCount = 0;
         _lastKilledId = 0;
+        _registeredKills.Clear();
         _hasAutoTargeted = false;
     }
 
