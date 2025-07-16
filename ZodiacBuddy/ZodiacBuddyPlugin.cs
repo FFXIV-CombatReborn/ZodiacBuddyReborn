@@ -8,6 +8,7 @@ using ZodiacBuddy.BonusLight;
 using ZodiacBuddy.Stages.Atma;
 using ZodiacBuddy.Stages.Brave;
 using ZodiacBuddy.Stages.Novus;
+using ZodiacBuddy.Stages.Zenith;
 using ECommons;
 using ECommons.DalamudServices;
 
@@ -23,6 +24,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     private readonly AtmaManager animusBuddy;
     private readonly NovusManager novusManager;
     private readonly BraveManager braveManager;
+    private readonly ZenithManager zenithManager;
     private readonly WindowSystem windowSystem;
     internal TargetInfoWindow TargetWindow;
 
@@ -61,6 +63,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         this.animusBuddy = new AtmaManager();
         this.novusManager = new NovusManager();
         this.braveManager = new BraveManager();
+        this.zenithManager = new ZenithManager();
         this.atma = new AtmaManager();
         AtmaManager.OnFallbackPathIssued = () => atma.EnqueueUnmountAfterNav();
 
@@ -79,6 +82,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         this.animusBuddy.Dispose();
         this.novusManager.Dispose();
         this.braveManager.Dispose();
+        this.zenithManager.Dispose();
         Service.BonusLightManager.Dispose();
         ECommons.ECommonsMain.Dispose();
     }

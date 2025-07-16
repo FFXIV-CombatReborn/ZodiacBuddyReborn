@@ -4,8 +4,10 @@ using Newtonsoft.Json;
 using System.Text.Json.Serialization;
 using ZodiacBuddy.BonusLight;
 using ZodiacBuddy.InformationWindow;
+using ZodiacBuddy.Stages.Atma;
 using ZodiacBuddy.Stages.Brave;
 using ZodiacBuddy.Stages.Novus;
+using ZodiacBuddy.Stages.Zenith;
 
 namespace ZodiacBuddy;
 
@@ -25,6 +27,8 @@ public class PluginConfiguration : IPluginConfiguration {
     public NovusConfiguration Novus { get; } = new();
 
     public BraveConfiguration Brave { get; } = new();
+
+    public ZenithConfiguration Zenith { get; } = new();
 
     public InformationWindowConfiguration InformationWindow { get; } = new();
 

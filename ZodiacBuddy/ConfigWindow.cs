@@ -35,6 +35,9 @@ internal class ConfigWindow : Window {
         if (ImGui.CollapsingHeader("Bonus Light"))
             this.DrawBonusLight();
 
+        if (ImGui.CollapsingHeader("Zenith"))
+            this.DrawZenith();
+
         if (ImGui.CollapsingHeader("Atma"))
             this.DrawAtma();
 
@@ -225,9 +228,42 @@ internal class ConfigWindow : Window {
 
         ImGui.Spacing();
     }
+
+    private void DrawZenith() {
+        var showRelicWindow = Service.Configuration.Zenith.DisplayRelicInfo;
+        if (ImGui.Checkbox("Display Zodiac Zenith relic information when equipped", ref showRelicWindow)) {
+            Service.Configuration.Zenith.DisplayRelicInfo = showRelicWindow;
+            Service.Configuration.Save();
+        }
+
+        var showUpgradeProgress = Service.Configuration.Zenith.ShowUpgradeProgress;
+        if (ImGui.Checkbox("Show upgrade progress and tracking", ref showUpgradeProgress)) {
+            Service.Configuration.Zenith.ShowUpgradeProgress = showUpgradeProgress;
+            Service.Configuration.Save();
+        }
+
+        var showMaterialRequirements = Service.Configuration.Zenith.ShowMaterialRequirements;
+        if (ImGui.Checkbox("Show material requirements for next upgrade", ref showMaterialRequirements)) {
+            Service.Configuration.Zenith.ShowMaterialRequirements = showMaterialRequirements;
+            Service.Configuration.Save();
+        }
+
+        ImGui.Spacing();
+    }
     
     private void Debug() {
         if (ImGui.Button("Check duties territory"))
             DebugTools.CheckBonusLightDutyTerritories();
+            
+        if (ImGui.Button("Show equipped weapon info")) {
+            var mainhand = Util.GetEquippedItem(0);
+            var offhand = Util.GetEquippedItem(1);
+            
+            Service.PluginLog.Info($"Mainhand: ID={mainhand.ItemId}");
+            Service.PluginLog.Info($"Offhand: ID={offhand.ItemId}");
+            
+            Service.ChatGui.Print($"[ZodiacBuddy] Mainhand: {mainhand.ItemId}");
+            Service.ChatGui.Print($"[ZodiacBuddy] Offhand: {offhand.ItemId}");
+        }
     }
 }
