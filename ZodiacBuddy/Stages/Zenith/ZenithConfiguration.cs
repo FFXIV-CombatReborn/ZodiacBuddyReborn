@@ -18,4 +18,9 @@ public class ZenithConfiguration {
     /// Gets or sets a value indicating whether to display material requirements.
     /// </summary>
     public bool ShowMaterialRequirements { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether navigation buttons are enabled.
+    /// </summary>
+    public bool EnableNavigation { get; set; } = true;
 }

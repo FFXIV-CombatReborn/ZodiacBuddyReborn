@@ -9,6 +9,11 @@ namespace ZodiacBuddy.Stages.Zenith;
 /// </summary>
 public class ZenithWindow() : InformationWindow.InformationWindow("Zodiac Zenith Information") {
     private static InformationWindowConfiguration InfoWindowConfiguration => Service.Configuration.InformationWindow;
+    
+    /// <summary>
+    /// Reference to the ZenithManager for navigation functionality.
+    /// </summary>
+    public ZenithManager? Manager { get; set; }
 
     /// <inheritdoc/>
     protected override void DisplayRelicInfo(InventoryItem item) {
@@ -22,14 +27,14 @@ public class ZenithWindow() : InformationWindow.InformationWindow("Zodiac Zenith
 
         ImGui.PushStyleColor(ImGuiCol.PlotHistogram, InfoWindowConfiguration.ProgressColor);
 
-        // Display basic information about the Zenith weapon
-        ImGui.Text("Zenith Stage - Item Level 90");
-        ImGui.Text("Next: Atma Stage");
+        // Display upgrade information
+        ImGui.Text("Ready to upgrade to Zenith (Item Level 90)");
+        ImGui.Text("After Zenith: Atma Stage");
         
         // Show upgrade instructions
         if (Service.Configuration.Zenith.ShowMaterialRequirements) {
             ImGui.Separator();
-            ImGui.Text("Upgrade Requirements:");
+            ImGui.Text("Requirements to upgrade to Zenith:");
             
             var tomestoneCount = ZenithManager.GetTomestoneCount();
             var mistCount = ZenithManager.GetThavnairianMistCount();
@@ -60,7 +65,34 @@ public class ZenithWindow() : InformationWindow.InformationWindow("Zodiac Zenith
                 }
             }
             
-            ImGui.Text("• Visit Furnace in Central Thanalan");
+            ImGui.Text("• Bring materials to The Furnace in North Shroud (Hyrstmill)");
+            
+            // Navigation buttons
+            if (Service.Configuration.Zenith.EnableNavigation) {
+                ImGui.Separator();
+                ImGui.Text("Navigation:");
+                
+                if (ImGui.Button("Go to Furnace for Upgrade##ZenithFurnace")) {
+                    Manager?.NavigateToLocation(ZenithDestinations.Furnace);
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Stop Navigation##ZenithStop")) {
+                    Manager?.StopNavigation();
+                }
+                
+                // Vendor navigation for materials
+                if (mistCount < requiredMists) {
+                    ImGui.Spacing();
+                    ImGui.Text("Get Thavnairian Mist:");
+                    if (ImGui.Button("Auriana (Mor Dhona)##ZenithAuriana")) {
+                        Manager?.NavigateToLocation(ZenithDestinations.AurianaPoeticsVendor);
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Hismena (Idyllshire)##ZenithHismena")) {
+                        Manager?.NavigateToLocation(ZenithDestinations.HismenaPoeticsVendor);
+                    }
+                }
+            }
         }
 
         ImGui.PopStyleColor();
