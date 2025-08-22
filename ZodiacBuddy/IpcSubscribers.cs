@@ -1,4 +1,4 @@
-﻿using ECommons.EzIpcManager;
+using ECommons.EzIpcManager;
 using ECommons.Reflection;
 using System;
 using System.Collections.Generic;

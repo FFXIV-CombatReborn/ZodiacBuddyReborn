@@ -1,4 +1,4 @@
-ï»¿using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using Dalamud.Bindings.ImGui;
 using ZodiacBuddy.InformationWindow;
 
@@ -16,8 +16,8 @@ public class BraveWindow() : InformationWindow.InformationWindow("Zodiac Brave I
             return;
 
         name = name
-            .Replace("Å’", "Oe")
-            .Replace("Å“", "oe");
+            .Replace("Œ", "Oe")
+            .Replace("œ", "oe");
         ImGui.Text(name);
 
         ImGui.PushStyleColor(ImGuiCol.PlotHistogram, InfoWindowConfiguration.ProgressColor);

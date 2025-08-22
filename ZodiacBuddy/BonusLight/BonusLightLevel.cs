@@ -1,4 +1,4 @@
-﻿using Lumina.Excel.Sheets;
+using Lumina.Excel.Sheets;
 
 namespace ZodiacBuddy.BonusLight;
 

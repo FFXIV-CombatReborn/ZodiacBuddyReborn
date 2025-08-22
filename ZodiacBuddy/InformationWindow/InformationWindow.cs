@@ -1,4 +1,4 @@
-ï»¿using System;
+using System;
 using System.Numerics;
 
 using Dalamud.Interface;
@@ -119,8 +119,8 @@ public abstract class InformationWindow {
 
             foreach (var territoryId in BonusConfiguration.ActiveBonus) {
                 var dutyName = BonusLightDuty.GetValue(territoryId).DutyName
-                    .Replace("Å’", "Oe")
-                    .Replace("Å“", "oe");
+                    .Replace("Œ", "Oe")
+                    .Replace("œ", "oe");
                 ImGui.Text($"\"{dutyName}\"");
             }
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
@@ -192,7 +192,7 @@ public class BonusLightManager : IDisposable {
                 BonusLightDuty.TryGetValue(report.TerritoryId, out var duty) &&
                 !LightConfiguration.ActiveBonus.Contains(report.TerritoryId)) {
                 LightConfiguration.ActiveBonus.Add(report.TerritoryId);
-                listUpdated.Add($" {duty!.DutyName}"); // This '' is an arrow in game
+                listUpdated.Add($"? {duty!.DutyName}"); // This '?' is an arrow in game
             }
         }
 

@@ -4,17 +4,16 @@
     <Description>Complete your Zodiac relic with style.</Description>
     <PackageProjectUrl>https://github.com/MidoriKami/ZodiacBuddy</PackageProjectUrl>
     <Version>1.13.0.0</Version>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>ZodiacBuddyReborn</AssemblyName>
   </PropertyGroup>
-		<UseWindowsForms>true</UseWindowsForms>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<AssemblyName>ZodiacBuddyReborn</AssemblyName>
-	</PropertyGroup>
 
-	<ItemGroup>
-		<PackageReference Include="LitJWT" Version="2.0.2" />
-	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="LitJWT" Version="2.0.2" />
+  </ItemGroup>
 
-	<ItemGroup>
-		<ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
-	</ItemGroup>
+  <ItemGroup>
+	  <PackageReference Include="ECommons" Version="3.0.1.9" />
+  </ItemGroup>
 </Project>

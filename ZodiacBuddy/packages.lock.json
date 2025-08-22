@@ -14,14 +14,17 @@
         "resolved": "1.2.25",
         "contentHash": "xCXiw7BCxHJ8pF6wPepRUddlh2dlQlbr81gXA72hdk4FLHkKXas7EH/n+fk5UCA/YfMqG1Z6XaPiUjDbUNBUzg=="
       },
+      "ECommons": {
+        "type": "Direct",
+        "requested": "[3.0.1.9, )",
+        "resolved": "3.0.1.9",
+        "contentHash": "Bv7Uv9VZwPpS/AA4TnzeCCPw2uanp1Pg9RGpM5lcDWC8ENBNkyp/fAe9JdHwI3WByOZSZVkMvW8jRycBhzehlA=="
+      },
       "LitJWT": {
         "type": "Direct",
         "requested": "[2.0.2, )",
         "resolved": "2.0.2",
         "contentHash": "6bJefqPtD9W8NgEChq7OYdWc2msBYPV5FJMv7oWZD9UYByCznYTeBmhJwaiThOpsSpcbo8/XNsxKANMyauJ5vQ=="
-      },
-      "ecommons": {
-        "type": "Project"
       }
     }
   }

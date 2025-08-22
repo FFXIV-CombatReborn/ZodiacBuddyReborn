@@ -1,4 +1,4 @@
-﻿namespace ZodiacBuddy.Stages.Novus;
+namespace ZodiacBuddy.Stages.Novus;
 
 /// <summary>
 /// Configuration class for Nexus relic.

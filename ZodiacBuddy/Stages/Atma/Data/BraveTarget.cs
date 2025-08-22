@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 
 namespace ZodiacBuddy.Stages.Atma.Data;
 

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Lumina.Excel.Sheets;
 
 namespace ZodiacBuddy.BonusLight;
@@ -73,7 +73,7 @@ public class BonusLightDuty {
         {  360, new BonusLightDuty( 360, 48) }, // Halatali (Hard)
         {  362, new BonusLightDuty( 362, 32) }, // Brayflox's Longstop (Hard)
         {  361, new BonusLightDuty( 361, 48) }, // Hullbreaker Isle
-        {  373, new BonusLightDuty( 373, 48) }, // the Tam–Tara Deepcroft (Hard)
+        {  373, new BonusLightDuty( 373, 48) }, // the Tam�Tara Deepcroft (Hard)
         {  365, new BonusLightDuty( 365, 48) }, // the Stone Vigil (Hard)
         { 1062, new BonusLightDuty(1062, 48) }, // Snowcloak
         {  387, new BonusLightDuty( 387, 48) }, // Sastasha (Hard)

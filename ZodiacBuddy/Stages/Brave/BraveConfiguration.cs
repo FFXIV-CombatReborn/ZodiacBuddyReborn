@@ -1,4 +1,4 @@
-﻿namespace ZodiacBuddy.Stages.Brave;
+namespace ZodiacBuddy.Stages.Brave;
 
 /// <summary>
 /// Configuration class for Zodiac Brave relic.

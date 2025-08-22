@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Colors;
@@ -7,7 +7,7 @@ using Dalamud.Plugin.Services;
 using ECommons.Automation.LegacyTaskManager;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Common.Math;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -80,7 +80,7 @@ namespace ZodiacBuddy.TargetWindow
 
                     if (rsrEnabled)
                     {
-                        Service.PluginLog.Debug("Kill complete — disabling RSR via /rotation off.");
+                        Service.PluginLog.Debug("Kill complete � disabling RSR via /rotation off.");
                         Service.CommandManager.ProcessCommand("/rotation off");
                         rsrEnabled = false;
                     }
