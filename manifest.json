@@ -4,8 +4,8 @@
   "InternalName": "ZodiacBuddyReborn",
   "Description": "Automates various steps of the ARR Relic Quests",
   "ApplicableVersion": "any",
-  "DalamudApiLevel": 12,
-  "TestingDalamudApiLevel": 12,
+  "DalamudApiLevel": 13,
+  "TestingDalamudApiLevel": 13,
   "Tags": [
     "Automatic",
     "Relics"
