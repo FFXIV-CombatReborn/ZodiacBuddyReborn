@@ -1,6 +1,7 @@
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Game.ClientState.Fates;
 using ZodiacBuddy.BonusLight;
 
 namespace ZodiacBuddy;
@@ -18,7 +19,7 @@ public class Service {
     [PluginService] public static IToastGui Toasts { get; set; }
     [PluginService] public static IPluginLog PluginLog { get; set; }
     [PluginService] public static IAddonLifecycle AddonLifecycle { get; set; }
-    
+    [PluginService] public static IFateTable FateTable { get; set; }
     public static ZodiacBuddyPlugin Plugin { get; set; } = null!;
     public static PluginConfiguration Configuration { get; set; } = null!;
     public static BonusLightManager BonusLightManager { get; set; } = null!;

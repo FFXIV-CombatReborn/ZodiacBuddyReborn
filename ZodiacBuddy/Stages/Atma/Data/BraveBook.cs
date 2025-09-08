@@ -148,6 +148,7 @@ internal struct BraveBook {
                         ZoneId = zoneId,
                         LocationName = string.Empty,
                         Position = position,
+                        FateId = fateId,
                     };
                 }
 
@@ -342,12 +343,12 @@ internal struct BraveBook {
             657 => new MapLinkPayload(156, 25, 29.8f, 12.5f), // Necrologos: The Liminal Ones    // Mor Dhona
             658 => new MapLinkPayload(156, 25, 29.8f, 12.5f), // Big, Bad Idea                   // Mor Dhona
             659 => new MapLinkPayload(156, 25, 29.8f, 12.5f), // Put Your Stomp on It            // Mor Dhona
-            848 => new MapLinkPayload(155, 53, 12.0f, 16.7f), // Someone's Got a Big Mouth       // Coerthas Central Highlands
-            849 => new MapLinkPayload(155, 53, 12.0f, 16.7f), // An Imp Mobile                   // Coerthas Central Highlands
-            853 => new MapLinkPayload(155, 53, 12.0f, 16.7f), // Yellow Is the New Black         // Coerthas Central Highlands
-            855 => new MapLinkPayload(155, 53, 12.0f, 16.7f), // The Bloodhounds of Coerthas     // Coerthas Central Highlands
-            859 => new MapLinkPayload(155, 53, 12.0f, 16.7f), // No Big Whoop                    // Coerthas Central Highlands
-            860 => new MapLinkPayload(155, 53, 12.0f, 16.7f), // If You Put It That Way          // Coerthas Central Highlands
+            848 => new MapLinkPayload(155, 53, 12.3f, 16.7f), // Someone's Got a Big Mouth       // Coerthas Central Highlands
+            849 => new MapLinkPayload(155, 53, 12.3f, 16.7f), // An Imp Mobile                   // Coerthas Central Highlands
+            853 => new MapLinkPayload(155, 53, 12.3f, 16.7f), // Yellow Is the New Black         // Coerthas Central Highlands
+            855 => new MapLinkPayload(155, 53, 12.3f, 16.7f), // The Bloodhounds of Coerthas     // Coerthas Central Highlands
+            859 => new MapLinkPayload(155, 53, 12.3f, 16.7f), // No Big Whoop                    // Coerthas Central Highlands
+            860 => new MapLinkPayload(155, 53, 12.3f, 16.7f), // If You Put It That Way          // Coerthas Central Highlands
             863 => new MapLinkPayload(156, 25, 30.7f, 12.0f), // One Big Problem Solved          // Mor Dhona
             865 => new MapLinkPayload(156, 25, 30.7f, 12.0f), // Go Home to Mama                 // Mor Dhona
             868 => new MapLinkPayload(156, 25, 30.7f, 12.0f), // The Awry Salvages               // Mor Dhona

@@ -1,6 +1,8 @@
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Fates;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
@@ -18,13 +20,15 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 //using FFXIVClientStructs.FFXIV.Common.Math;
+using FFXVec3 = FFXIVClientStructs.FFXIV.Common.Math.Vector3;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using Dalamud.Bindings.ImGui;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Text;
+using System.Globalization;
 using System.Threading.Tasks;
 using ZodiacBuddy.Stages.Atma.Data;
 using ZodiacBuddy.Stages.Atma.Movement;
@@ -49,6 +53,8 @@ internal class AtmaManager : IDisposable {
     private const float NavResetThreshold = 3f;     // Seconds before declaring stuck
     private readonly AdvancedUnstuck _advancedUnstuck;
     public static System.Action? OnFallbackPathIssued;
+    private static System.Numerics.Vector3 ToSys(FFXVec3 v) => new(v.X, v.Y, v.Z);
+
     private bool monitoringPathing = false;
     private DateTime unmountStartTime;
     private bool monitoringUnstuck = false;
@@ -56,11 +62,18 @@ internal class AtmaManager : IDisposable {
     private bool hasQueuedMountTasks = false;
     private bool hasEnteredBetweenAreas = false;
     private bool awaitingTeleportFromRelicBookClick = false;
+    private enum PathingContext { None, Enemy, Fate, Leve }
+    private PathingContext _pathingContext = PathingContext.None;
+    private enum UnstuckPhase { Idle, AwaitingPathStart, AwaitingFirstMovement, Active }
+    private UnstuckPhase _unstuckPhase = UnstuckPhase.Idle;
+    private Vector3 _armPos;
+    private PathingContext _resumeContext = PathingContext.None;
+    public Vector3? CurrentTargetPosition { get; private set; }
     public bool IsPathGenerating => VNavmesh.Nav.PathfindInProgress();
     public bool IsPathing => VNavmesh.Path.IsRunning();
     public bool NavReady => VNavmesh.Nav.IsReady();
-    private List<Vector3>? _lastKnownPath;
     private readonly TaskManager TaskManager = new();
+    private ushort? _pendingFateId;
     public bool CanAct
     {
         get
@@ -96,7 +109,7 @@ internal class AtmaManager : IDisposable {
 
         Service.AddonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "RelicNoteBook", ReceiveEventDetour);
         Svc.Framework.Update += _advancedUnstuck.RunningUpdate;
-        Svc.Framework.Update += MonitorUnstuck;
+       // Svc.Framework.Update += MonitorUnstuck;
     }
     /// <inheritdoc/>
     public void Dispose() {
@@ -154,6 +167,88 @@ internal class AtmaManager : IDisposable {
         }
         return closestAetheryteId;
     }
+    private static string Normalize(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+
+        // Turn SeString-ish residuals into plain text expectations
+        s = s.Normalize(NormalizationForm.FormKC)
+             .Replace('’', '\'')
+             .Replace('“', '"').Replace('”', '"')
+             .Replace('…', '.')
+             .Replace('–', '-') // en dash
+             .Replace('—', '-') // em dash
+             .Replace('\u00A0', ' '); // NBSP -> space
+
+        // collapse whitespace & trim
+        var sb = new StringBuilder(s.Length);
+        bool wasSpace = false;
+        foreach (var ch in s)
+        {
+            if (char.IsWhiteSpace(ch))
+            {
+                if (!wasSpace) { sb.Append(' '); wasSpace = true; }
+            }
+            else
+            {
+                sb.Append(ch);
+                wasSpace = false;
+            }
+        }
+
+        return sb.ToString().Trim().ToLowerInvariant();
+    }
+    private void ResetRunStateForNewCycle()
+    {
+        Svc.Framework.Update -= MonitorPathingAndDismount;
+        Svc.Framework.Update -= MonitorUnstuck;
+
+        monitoringPathing = false;
+        monitoringUnstuck = false;
+
+        _unstuckPhase = UnstuckPhase.Idle;
+        restartNavAfterUnstuck = false;
+
+        hasEnteredBetweenAreas = false;
+        hasQueuedMountTasks = false;
+        awaitingTeleportFromRelicBookClick = false;
+    }
+    private void ResetTeleportCycleFlags()
+    {
+        hasEnteredBetweenAreas = false;
+        hasQueuedMountTasks = false;
+        awaitingTeleportFromRelicBookClick = false;
+    }
+    private static readonly Dictionary<string, ushort> FateNameToId = new()
+    {
+        ["surprise"] = 317,
+        ["heroes of the 2nd"] = 424,
+        ["return to cinder"] = 430,
+        ["bellyful"] = 475,
+        ["giant seps"] = 480,
+        ["tower of power"] = 486,
+        ["the taste of fear"] = 493,
+        ["the four winds"] = 499,
+        ["black and nburu"] = 516,
+        ["good to be bud"] = 517,
+        ["another notch on the torch"] = 521,
+        ["quartz coupling"] = 540,
+        ["the big bagoly theory"] = 543,
+        ["taken"] = 552,
+        ["breaching north tidegate"] = 569,
+        ["breaching south tidegate"] = 571,
+        ["the king's justice"] = 577,
+        ["schism"] = 587,
+        ["make it rain"] = 589,
+        ["in spite of it all"] = 604,
+        ["the enmity of my enemy"] = 611,
+        ["breaking dawn"] = 616,
+        ["everything's better"] = 620,
+        ["what gored before"] = 628,
+        ["rude awakening"] = 632,
+        ["air supply"] = 633,
+        ["the ceruleum road"] = 642,
+    };
     private unsafe void Teleport(uint aetheryteId) {
         if (Service.ClientState.LocalPlayer == null) return;
         if (Service.Configuration.DisableTeleport) return;
@@ -215,7 +310,6 @@ internal class AtmaManager : IDisposable {
             ? $"{selectedTarget.LocationName}, {selectedTarget.ZoneName}"
             : selectedTarget.ZoneName;
 
-        // Service.PluginLog.Debug($"Target selected: {selectedTarget.Name} in {zoneName}.");
         if (Service.Configuration.BraveEchoTarget)
         {
             var sb = new SeStringBuilder()
@@ -236,28 +330,93 @@ internal class AtmaManager : IDisposable {
             ImGui.SetClipboardText(selectedTarget.Name);
 
         }
-        // Always update internal display, regardless of whether clipboard copy is enabled
-        Service.Plugin.TargetWindow?.SetTarget(selectedTarget.Name);
-
-        var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
-        if (aetheryteId == 0)
+        if (index == 0)
         {
-            if (index == 1)
-            {
-                // Dungeons
-                AgentContentsFinder.Instance()->OpenRegularDuty(selectedTarget.ContentsFinderConditionId);
-            }
-            else
+            ResetRunStateForNewCycle();
+            _pendingFateId = null;
+            Service.Plugin.TargetWindow?.SetTarget(selectedTarget.Name);
+
+            var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
+            if (aetheryteId == 0)
             {
                 Service.PluginLog.Warning($"Could not find an aetheryte for {zoneName}");
+                return;
             }
-        }
-        else
-        {
             Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
             this.Teleport(aetheryteId);
             if (!Service.Configuration.IsAtmaManagerEnabled)
                 return;
+            _pathingContext = PathingContext.Enemy;
+            ResetTeleportCycleFlags();
+            if (!awaitingTeleportFromRelicBookClick)
+            {
+                awaitingTeleportFromRelicBookClick = true;
+                Svc.Framework.Update += WaitForBetweenAreasAndExecute; 
+            }
+            return;
+        }
+        else if (index == 1)
+        {
+            ResetRunStateForNewCycle();
+            _pendingFateId = null;
+            var cfcId = selectedTarget.ContentsFinderConditionId;
+
+            var territoryId = selectedTarget.Position.TerritoryType.RowId;
+
+            var started = false;
+            if (AutoDutyIpc.Enabled)
+            {
+                if (AutoDutyIpc.HasPath(territoryId))
+                {
+                    started = AutoDutyIpc.StartInstance(territoryId, AutoDutyIpc.DutyMode.UnsyncRegular, useBareMode: true);
+                }
+                else
+                {
+                    Service.PluginLog.Warning($"AutoDuty reports no path for territory {territoryId} ({zoneName}).");
+                }
+            }
+
+            if (started)
+            {
+                Service.Plugin.PrintMessage($"AutoDuty: starting unsynced for {selectedTarget.Name}.");
+                return;
+            }
+
+            AgentContentsFinder.Instance()->OpenRegularDuty(cfcId);
+            Service.Plugin.PrintMessage($"AutoDuty unavailable. Opened Duty Finder for {selectedTarget.Name}.");
+            return;
+        }
+
+        else if (index == 2)
+        {
+            ResetRunStateForNewCycle();
+            _pathingContext = PathingContext.Fate;
+
+            hasEnteredBetweenAreas = false;
+            hasQueuedMountTasks = false;
+            var norm = Normalize(selectedTarget.Name);
+            if (!FateNameToId.TryGetValue(norm, out var fateId))
+            {
+                Service.PluginLog.Warning($"[ZBR] Unknown FATE name '{selectedTarget.Name}' - cannot resolve FateId.");
+                _pendingFateId = null;
+            }
+            else
+            {
+                _pendingFateId = fateId;
+                Service.PluginLog.Debug($"[ZBR] Pending FateId set to {_pendingFateId.Value} for '{selectedTarget.Name}'.");
+            }
+
+            var fatePos = selectedTarget.Position;
+            Service.GameGui.OpenMapWithMapLink(fatePos);
+
+            var aetheryteId = GetNearestAetheryte(fatePos);
+            if (aetheryteId == 0)
+            {
+                Service.PluginLog.Warning("[ZBR] No aetheryte found for selected FATE zone.");
+                return;
+            }
+
+            this.Teleport(aetheryteId);
             if (!awaitingTeleportFromRelicBookClick)
             {
                 awaitingTeleportFromRelicBookClick = true;
@@ -265,13 +424,79 @@ internal class AtmaManager : IDisposable {
             }
             return;
         }
+        else if (index == 3)
+        {
+            ResetRunStateForNewCycle();
+            _pendingFateId = null;
+            var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
+            if (aetheryteId == 0)
+            {
+                Service.PluginLog.Warning($"Could not find an aetheryte for {zoneName}");
+                Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
+                return;
+            }
+            Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
+            this.Teleport(aetheryteId);
+
+            _pathingContext = PathingContext.Leve;
+            ResetTeleportCycleFlags();
+            if (!awaitingTeleportFromRelicBookClick)
+            {
+                awaitingTeleportFromRelicBookClick = true;
+                Svc.Framework.Update += WaitForBetweenAreasAndExecute; 
+            }
+            return;
+        }
+    }
+    private static bool TryGetLiveFateById(ushort fateId, out IFate fate)
+    {
+        foreach (var f in Svc.Fates)
+        {
+            if (f.FateId == fateId)
+            {
+                if (f.State == FateState.Preparation) break;
+                fate = f;
+                return true;
+            }
+        }
+        fate = default!;
+        return false;
     }
     private void MonitorUnstuck(IFramework _)
     {
-        if (!IsPathing || _advancedUnstuck.IsRunning || Player.Object == null)
-            return;
+        if (Player.Object == null) return;
+        switch (_unstuckPhase)
+        {
+            case UnstuckPhase.Idle:
+                return;
+
+            case UnstuckPhase.AwaitingPathStart:
+                if (!VNavmesh.Nav.PathfindInProgress()    
+                    && VNavmesh.Path.IsRunning()           
+                    && VNavmesh.Path.NumWaypoints() > 0)  
+                {
+                    _armPos = Player.Object.Position;
+                    _unstuckPhase = UnstuckPhase.AwaitingFirstMovement;
+                }
+                return;
+
+            case UnstuckPhase.AwaitingFirstMovement:
+                if (Vector3.Distance(_armPos, Player.Object.Position) >= MinMovementDistance)
+                {
+                    _lastPosition = Player.Object.Position;
+                    _lastMovement = DateTime.Now; 
+                    _unstuckPhase = UnstuckPhase.Active;
+                }
+                return;
+
+            case UnstuckPhase.Active:
+                break; 
+        }
+        if (!IsPathing || _advancedUnstuck.IsRunning) return;
+
         var now = DateTime.Now;
         var currentPos = Player.Object.Position;
+
         if (Vector3.Distance(_lastPosition, currentPos) >= MinMovementDistance)
         {
             _lastPosition = currentPos;
@@ -280,36 +505,94 @@ internal class AtmaManager : IDisposable {
         else if ((now - _lastMovement).TotalSeconds > NavResetThreshold)
         {
             Service.PluginLog.Debug($"AdvancedUnstuck: stuck detected. Moved {Vector3.Distance(_lastPosition, currentPos)} yalms in {(now - _lastMovement).TotalSeconds:F1} seconds.");
+            _resumeContext = _pathingContext;
             restartNavAfterUnstuck = true;
             _advancedUnstuck.Start();
-            _lastMovement = now; // Prevent spamming Start
+            _lastMovement = now;
         }
     }
+
     internal void WaitForBetweenAreasAndExecute(IFramework framework)
     {
         if (!Service.Configuration.IsAtmaManagerEnabled || !awaitingTeleportFromRelicBookClick)
             return;
+
         if (!hasEnteredBetweenAreas)
         {
             if (Svc.Condition[ConditionFlag.BetweenAreas])
-            {
                 hasEnteredBetweenAreas = true;
+            return;
+        }
+
+        if (Svc.Condition[ConditionFlag.BetweenAreas]) return;
+        if (!GenericHelpers.IsScreenReady()) return;
+        if (hasQueuedMountTasks) return;
+
+        hasQueuedMountTasks = true;
+
+        if (_pathingContext == PathingContext.Fate)
+        {
+            if (_pendingFateId is ushort wantId)
+            {
+                Service.PluginLog.Debug($"[ZBR] Post-teleport check for FateId={wantId} (queued={hasQueuedMountTasks}).");
+
+                if (TryGetLiveFateById(wantId, out var liveFate))
+                {
+                    Service.PluginLog.Debug($"[ZBR] FateId={wantId} is present and active. Moving.");
+                    EnqueueMountAndFlyTo(liveFate.Position);
+
+                    hasQueuedMountTasks = true;
+                }
+                else
+                {
+                    Service.PluginLog.Debug("[ZBR] Clicked FATE id not present/active. Holding at aetheryte.");
+                    hasQueuedMountTasks = true; 
+                }
             }
+            else
+            {
+                Service.PluginLog.Warning("[ZBR] No pending FATE id set. Holding at aetheryte.");
+                hasQueuedMountTasks = true;
+            }
+
+            awaitingTeleportFromRelicBookClick = false;
+            Svc.Framework.Update -= WaitForBetweenAreasAndExecute;
+            return;
         }
         else
         {
-            if (!Svc.Condition[ConditionFlag.BetweenAreas] && GenericHelpers.IsScreenReady() && !hasQueuedMountTasks)
-            {
-                hasQueuedMountTasks = true;
-                EnqueueMountUp();
-            }
+            EnqueueMountUp();
         }
+        awaitingTeleportFromRelicBookClick = false;
+        Svc.Framework.Update -= WaitForBetweenAreasAndExecute;
+    }
+    private unsafe void EnqueueMountAndFlyTo(System.Numerics.Vector3 destination)
+    {
+        TaskManager.Enqueue(() => NavReady);
+        // Mount (skip if already mounted)
+        TaskManager.Enqueue(() =>
+        {
+            if (Svc.Condition[ConditionFlag.Mounted]) return true;
+            var am = ActionManager.Instance();
+            const uint rouletteId = 9;
+            if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
+                am->UseAction(ActionType.GeneralAction, rouletteId);
+            return true;
+        });
+        TaskManager.Enqueue(() => _advancedUnstuck.IsRunning || Svc.Condition[ConditionFlag.Mounted]);
+
+        TaskManager.Enqueue(() =>
+        {
+            VNavmesh.SimpleMove.PathfindAndMoveTo(destination, true);
+            EnqueueUnmountAfterNav();
+            return true;
+        });
     }
     private unsafe void EnqueueMountUp()
     {
         TaskManager.Enqueue(() => NavReady);
 
-        // Don't skip mounting
+        // Dont skip mounting
         TaskManager.Enqueue(() =>
         {
             if (Svc.Condition[ConditionFlag.Mounted])
@@ -358,7 +641,10 @@ internal class AtmaManager : IDisposable {
     }
     public unsafe void EnqueueUnmountAfterNav()
     {
-        if (monitoringPathing) return;
+        _unstuckPhase = UnstuckPhase.AwaitingPathStart;
+        StartUnstuckMonitoring();
+
+        Svc.Framework.Update -= MonitorPathingAndDismount;
         monitoringPathing = true;
         unmountStartTime = DateTime.Now;
         Svc.Framework.Update += MonitorPathingAndDismount;
@@ -389,15 +675,47 @@ internal class AtmaManager : IDisposable {
                     Service.PluginLog.Debug("[ZodiacBuddy] Player still mounted after dismount tasks. Waiting another tick.");
                     return false;
                 }
-
                 if (VNavmesh.Path.IsRunning())
                 {
                     Service.PluginLog.Debug("[ZodiacBuddy] Navmesh is still running after dismount tasks. Waiting another tick.");
                     return false;
                 }
-
                 Service.PluginLog.Debug("[ZodiacBuddy] Player dismounted and navmesh idle. Unlocking pathing.");
-                Service.Plugin.TargetWindow.OnAtmaPathingComplete();
+                if (_pathingContext == PathingContext.Enemy)
+                {
+                    Service.Plugin.TargetWindow.OnAtmaPathingComplete();
+                    TaskManager.Enqueue(() => { TaskManager.DelayNextImmediate(750); return true; });
+                    TaskManager.Enqueue(() =>
+                    {
+                        if (VNavmesh.Nav.PathfindInProgress() || VNavmesh.Path.IsRunning())
+                            return true;
+
+                        var tWin = Service.Plugin.TargetWindow;
+                        var posOpt = tWin?.CurrentTargetPosition;
+                        if (posOpt is FFXVec3 ffxPos)
+                        {
+                            VNavmesh.SimpleMove.PathfindAndMoveTo(ToSys(ffxPos), false);
+                        }
+                        //else
+                        //{
+                            // Optional FALLBACK(commed out for if i need it later)
+                            //Chat.ExecuteCommand("/vnav moveflag");
+                        //}
+                        return true;
+                    });
+
+                }
+
+                else if (_pathingContext == PathingContext.Fate)
+                {
+                    hasEnteredBetweenAreas = false;
+                    awaitingTeleportFromRelicBookClick = false;
+                    hasQueuedMountTasks = false;
+                }
+                _pathingContext = PathingContext.None;
+                _unstuckPhase = UnstuckPhase.Idle;
+                StopUnstuckMonitoring();
+                Svc.Framework.Update -= MonitorPathingAndDismount;
                 return true;
             });
         }
@@ -405,7 +723,49 @@ internal class AtmaManager : IDisposable {
     private void RestartNavigationToTarget()
     {
         VNavmesh.Path.Stop();
-        Chat.ExecuteCommand($"/vnavmesh moveflag");
+
+        if (_resumeContext != PathingContext.None)
+            _pathingContext = _resumeContext;
+
+        switch (_pathingContext)
+        {
+            case PathingContext.Enemy:
+                {
+                    var tWin = Service.Plugin.TargetWindow;
+                    var posOpt = tWin?.CurrentTargetPosition;
+
+                    if (posOpt is FFXVec3 ffxPos)
+                    {
+                        var sysPos = ToSys(ffxPos);
+                        Service.PluginLog.Debug($"[ZodiacBuddy] Restart nav (Enemy): nudging toward TargetWindow pos {sysPos}.");
+                        VNavmesh.SimpleMove.PathfindAndMoveTo(sysPos, false);
+                    }
+                    else
+                    {
+                        Service.PluginLog.Debug("[ZodiacBuddy] Restart nav (Enemy): no TargetWindow pos; using /vnav flyflag.");
+                        Chat.ExecuteCommand("/vnav moveflag");
+                    }
+                    break;
+                }
+
+            case PathingContext.Fate:
+                if (_pendingFateId is ushort wantId && TryGetLiveFateById(wantId, out var liveFate))
+                {
+                    VNavmesh.SimpleMove.PathfindAndMoveTo(liveFate.Position, true);
+                }
+                break;
+
+            case PathingContext.Leve:
+                Chat.ExecuteCommand("/vnav flyflag");
+                break;
+
+            default:
+                Chat.ExecuteCommand("/vnavmesh moveflag");
+                break;
+        }
+        _unstuckPhase = UnstuckPhase.AwaitingPathStart;
+        StartUnstuckMonitoring();
+
         monitoringPathing = true;
         Svc.Framework.Update += MonitorPathingAndDismount;
     }
@@ -413,7 +773,6 @@ internal class AtmaManager : IDisposable {
     {
         if (_advancedUnstuck.IsRunning)
         {
-            // Delay dismount until unstuck finishes
             Service.PluginLog.Debug("Skipping dismount because AdvancedUnstuck is active.");
             return;
         }
@@ -428,7 +787,7 @@ internal class AtmaManager : IDisposable {
             if (_advancedUnstuck.IsRunning)
             {
                 Service.PluginLog.Debug("Skipping Wait for not in flight because AdvancedUnstuck active.");
-                return true; // skip wait, let the task complete immediately
+                return true;
             }
             return !Svc.Condition[ConditionFlag.InFlight] && CanAct;
         }, 1000, "Wait for not in flight");
@@ -457,19 +816,13 @@ internal class AtmaManager : IDisposable {
         Service.PluginLog.Debug("Unstuck finished, restarting navigation.");
         RestartNavigationToTarget();
     }
-    private void MoveToWithTracking(Vector3 destination)
-    {
-        _lastKnownPath = new List<Vector3> { destination };
-        VNavmesh.Path.MoveTo(_lastKnownPath, false);
-    }
     private void StartUnstuckMonitoring()
     {
         if (!monitoringUnstuck)
         {
             monitoringUnstuck = true;
-            //reset _lastPosition
             _lastPosition = Player.Object?.Position ?? Vector3.Zero;
-            //AdvancedUnstuck.Check handle _lastMovement timing
+            _lastMovement = DateTime.Now;
             Svc.Framework.Update += MonitorUnstuck;
         }
     }

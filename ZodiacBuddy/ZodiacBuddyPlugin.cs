@@ -20,7 +20,6 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     private const string Command = "/pzodiac";
     private const string TargetWindowCommand = "/ztarget";
 
-    private readonly AtmaManager animusBuddy;
     private readonly NovusManager novusManager;
     private readonly BraveManager braveManager;
     private readonly WindowSystem windowSystem;
@@ -58,12 +57,11 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         });
 
         Service.BonusLightManager = new BonusLightManager();
-        this.animusBuddy = new AtmaManager();
         this.novusManager = new NovusManager();
         this.braveManager = new BraveManager();
         this.atma = new AtmaManager();
         AtmaManager.OnFallbackPathIssued = () => atma.EnqueueUnmountAfterNav();
-
+        AutoDutyIpc.Init();
     }
 
     /// <inheritdoc/>
@@ -76,7 +74,6 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;
         Service.Interface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
 
-        this.animusBuddy.Dispose();
         this.novusManager.Dispose();
         this.braveManager.Dispose();
         Service.BonusLightManager.Dispose();
