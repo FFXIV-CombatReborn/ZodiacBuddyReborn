@@ -35,15 +35,27 @@ namespace ZodiacBuddy.TargetWindow
         private bool fallbackSuppressedPermanently = false;
         public Vector3? CurrentTargetPosition { get; private set; }
         private DateTime fallbackSuppressionUntil = DateTime.MinValue;
-        
+
         public TargetInfoWindow() : base("ZodiacBuddy Target Info", ImGuiWindowFlags.AlwaysAutoResize)
         {
-            this.IsOpen = true;
+            this.IsOpen = Service.Configuration.TargetInfoWindowWasOpen;
+
             Svc.Framework.Update += OnFrameworkUpdate;
         }
-
+        public override void OnOpen()
+        {
+            Service.Configuration.TargetInfoWindowWasOpen = true;
+            Service.Configuration.Save();
+        }
+        public override void OnClose()
+        {
+            Service.Configuration.TargetInfoWindowWasOpen = false;
+            Service.Configuration.Save();
+        }
         public void Dispose()
         {
+            Service.Configuration.TargetInfoWindowWasOpen = Service.Plugin.TargetWindow?.IsOpen ?? false;
+            Service.Configuration.Save();
             Svc.Framework.Update -= OnFrameworkUpdate;
         }
         public enum TargetingState

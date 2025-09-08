@@ -27,6 +27,11 @@ internal struct BraveTarget {
     public uint ZoneId { get; init; }
 
     /// <summary>
+    /// Gets the ID of FATE from Book click.
+    /// </summary>
+    public uint FateId { get; init; }
+
+    /// <summary>
     /// Gets the contents finder condition ID.
     /// </summary>
     public uint ContentsFinderConditionId { get; init; }
@@ -40,4 +45,6 @@ internal struct BraveTarget {
     /// Gets the position that this target is roughly at.
     /// </summary>
     public MapLinkPayload Position { get; init; }
+
+
 }

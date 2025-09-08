@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using ECommons.DalamudServices;
 using ECommons.EzSharedDataManager;
+using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
 
 #pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
 namespace ZodiacBuddy;
@@ -16,6 +18,84 @@ internal static class IPCSubscriber
 {
     public static bool IsReady(string pluginName)
         => DalamudReflector.TryGetDalamudPlugin(pluginName, out _, false, true);
+}
+
+internal static class AutoDutyIpc
+{
+    private static ICallGateSubscriber<uint, bool>? _contentHasPath;     // "AutoDuty.ContentHasPath" (territoryId -> hasPath)
+    private static ICallGateSubscriber<string, string, object>? _setConfig; // "AutoDuty.SetConfig" (key,value)
+    private static ICallGateSubscriber<uint, int, bool, object>? _run;      // "AutoDuty.Run" (territoryId, pathIndex, useBareMode)
+    private static ICallGateSubscriber<bool>? _isStopped;                 // "AutoDuty.IsStopped"
+    private static ICallGateSubscriber<object>? _stop;                    // "AutoDuty.Stop"
+
+    public static bool Enabled { get; private set; }
+
+    public enum DutyMode
+    {
+        Support = 1,
+        UnsyncRegular = 2,
+    }
+
+    public static void Init()
+    {
+        try
+        {
+            _contentHasPath = Service.Interface.GetIpcSubscriber<uint, bool>("AutoDuty.ContentHasPath");
+            _setConfig = Service.Interface.GetIpcSubscriber<string, string, object>("AutoDuty.SetConfig");
+            _run = Service.Interface.GetIpcSubscriber<uint, int, bool, object>("AutoDuty.Run");
+            _isStopped = Service.Interface.GetIpcSubscriber<bool>("AutoDuty.IsStopped");
+            _stop = Service.Interface.GetIpcSubscriber<object>("AutoDuty.Stop");
+            Enabled = true;
+        }
+        catch
+        {
+            Enabled = false;
+        }
+    }
+
+    public static bool HasPath(uint territoryId)
+    {
+        try { return _contentHasPath?.InvokeFunc(territoryId) ?? false; }
+        catch (IpcError) { return false; }
+    }
+
+    public static bool IsStopped()
+    {
+        try { return _isStopped?.InvokeFunc() ?? true; }
+        catch (IpcError) { return true; }
+    }
+
+    public static void Stop()
+    {
+        try { _stop?.InvokeAction(); } catch (IpcError) { /* swallow */ }
+    }
+
+    /// <summary>
+    /// Configure AutoDuty for Unsynced/Support and start the run.
+    /// </summary>
+    public static bool StartInstance(uint territoryId, DutyMode dutyMode, bool useBareMode = true)
+    {
+        if (!Enabled || _setConfig is null || _run is null) return false;
+
+        try
+        {
+            // Mirror Questionable config:
+            // Unsynced: true for UnsyncRegular, false for Support
+            _setConfig.InvokeAction("Unsynced", (dutyMode == DutyMode.UnsyncRegular).ToString());
+
+            // dutyModeEnum: "Regular" for UnsyncRegular, "Support" otherwise
+            var modeStr = dutyMode == DutyMode.UnsyncRegular ? "Regular" : "Support";
+            _setConfig.InvokeAction("dutyModeEnum", modeStr);
+
+            // Path index: 1 (same as Questionable); useBareMode: true by default
+            _run.InvokeAction(territoryId, 1, useBareMode);
+            return true;
+        }
+        catch (IpcError)
+        {
+            return false;
+        }
+    }
 }
 
 internal static class VNavmesh

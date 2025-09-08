@@ -15,7 +15,7 @@ public class PluginConfiguration : IPluginConfiguration {
     [JsonProperty("BraveEchoChannel")] public XivChatType ChatType { get; set; } = XivChatType.Echo;
 
     public bool BraveEchoTarget { get; set; } = true;
-
+    public bool TargetInfoWindowWasOpen { get; set; } = false;
     public bool BraveCopyTarget { get; set; } = true;
 
     [JsonPropertyName("IsAtmaManagerEnabled")]
