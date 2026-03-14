@@ -5,13 +5,13 @@ using Dalamud.Utility.Signatures;
 using ECommons.DalamudServices;
 using ECommons.Logging;
 using ECommons.MathHelpers;
+using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using ZodiacBuddy.Stages.Atma.Unstuck;
 
-namespace ZodiacBuddy.Stages.Atma.Movement;
+namespace ZodiacBuddy;
 
 [StructLayout(LayoutKind.Explicit, Size = 0x18)]
 public unsafe struct PlayerMoveControllerFlyInput
@@ -66,11 +66,11 @@ public unsafe class OverrideMovement : IDisposable
 
     private delegate void RMIWalkDelegate(void* self, float* sumLeft, float* sumForward, float* sumTurnLeft, byte* haveBackwardOrStrafe, byte* a6, byte bAdditiveUnk);
     [Signature("E8 ?? ?? ?? ?? 80 7B 3E 00 48 8D 3D")]
-    private Hook<RMIWalkDelegate> _rmiWalkHook = null!;
+    private readonly Hook<RMIWalkDelegate> _rmiWalkHook = null!;
 
     private delegate void RMIFlyDelegate(void* self, PlayerMoveControllerFlyInput* result);
     [Signature("E8 ?? ?? ?? ?? 0F B6 0D ?? ?? ?? ?? B8")]
-    private Hook<RMIFlyDelegate> _rmiFlyHook = null!;
+    private readonly Hook<RMIFlyDelegate> _rmiFlyHook = null!;
 
     public OverrideMovement()
     {
@@ -86,13 +86,14 @@ public unsafe class OverrideMovement : IDisposable
         Svc.GameConfig.UiControlChanged -= OnConfigChanged;
         _rmiWalkHook.Dispose();
         _rmiFlyHook.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private void RMIWalkDetour(void* self, float* sumLeft, float* sumForward, float* sumTurnLeft, byte* haveBackwardOrStrafe, byte* a6, byte bAdditiveUnk)
     {
         _rmiWalkHook.Original(self, sumLeft, sumForward, sumTurnLeft, haveBackwardOrStrafe, a6, bAdditiveUnk);
         bool movementAllowed = bAdditiveUnk == 0 && !Svc.Condition[ConditionFlag.BeingMoved];
-        if (movementAllowed && (IgnoreUserInput || *sumLeft == 0 && *sumForward == 0) && DirectionToDestination(false) is var relDir && relDir != null)
+        if (movementAllowed && (IgnoreUserInput || (*sumLeft == 0 && *sumForward == 0)) && DirectionToDestination(false) is var relDir && relDir != null)
         {
             var dir = relDir.Value.h.ToDirection();
             *sumLeft = dir.X;
@@ -103,12 +104,12 @@ public unsafe class OverrideMovement : IDisposable
     private void RMIFlyDetour(void* self, PlayerMoveControllerFlyInput* result)
     {
         _rmiFlyHook.Original(self, result);
-        var player = Svc.ClientState.LocalPlayer;
-        if (player == null) return;
+        var playerObject = Player.Object;
+        if (playerObject == null) return;
 
         if (AdvancedUnstuck?.IsRunning == true)
         {
-            var backwardDir = new Angle(player.Rotation) + 180f.Degrees();
+            var backwardDir = new Angle(playerObject.Rotation) + 180f.Degrees();
             var vector = backwardDir.ToDirection();
 
             result->Forward = 2f;
@@ -120,11 +121,11 @@ public unsafe class OverrideMovement : IDisposable
 
     private (Angle h, Angle v)? DirectionToDestination(bool allowVertical)
     {
-        var player = Svc.ClientState.LocalPlayer;
-        if (player == null)
+        var playerObject = Player.Object;
+        if (playerObject == null)
             return null;
 
-        var dist = DesiredPosition - player.Position;
+        var dist = DesiredPosition - playerObject.Position;
         if (dist.LengthSquared() <= Precision * Precision)
             return null;
 
@@ -133,7 +134,7 @@ public unsafe class OverrideMovement : IDisposable
 
         var refDir = _legacyMode
             ? ((CameraEx*)CameraManager.Instance()->GetActiveCamera())->DirH.Radians() + 180.Degrees()
-            : player.Rotation.Radians();
+            : playerObject.Rotation.Radians();
         return (dirH - refDir, dirV);
     }
 

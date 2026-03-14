@@ -1,14 +1,20 @@
+using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Plugin.Services;
+using ECommons.GameFunctions;
+using ECommons.GameHelpers;
+using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using LitJWT;
+using LitJWT.Algorithms;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-
-using FFXIVClientStructs.FFXIV.Client.UI;
-using LitJWT;
-using LitJWT.Algorithms;
-using Newtonsoft.Json;
 using ZodiacBuddy.Stages.Brave;
 using ZodiacBuddy.Stages.Novus;
 
@@ -23,6 +29,7 @@ public class BonusLightManager : IDisposable {
     private readonly HttpClient httpClient;
     private readonly Timer resetTimer;
     private Timer? checkTimer;
+    private bool disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BonusLightManager"/> class.
@@ -63,11 +70,8 @@ public class BonusLightManager : IDisposable {
 
     /// <inheritdoc/>
     public void Dispose() {
-        Service.ClientState.Login -= this.OnLogin;
-        Service.ClientState.Logout -= this.OnLogout;
-        this.resetTimer.Dispose();
-        this.checkTimer?.Dispose();
-        this.httpClient.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -105,14 +109,14 @@ public class BonusLightManager : IDisposable {
     /// <param name="territoryId">Id of the duty with the light bonus.</param>
     /// <param name="detectionTime">DateTime of the detection.</param>
     private void SendReport(uint territoryId, DateTime detectionTime) {
-        if (Service.ClientState.LocalPlayer == null)
+        if (!ECommons.GameHelpers.Player.Available)
             return;
 
-        if (Service.ClientState.LocalPlayer.HomeWorld is { RowId: 0 })
+        if (ECommons.GameHelpers.Player.HomeWorld is { RowId: 0 })
             return;
 
-        var datacenter = Service.ClientState.LocalPlayer.HomeWorld.Value.DataCenter.RowId;
-        var world = Service.ClientState.LocalPlayer.HomeWorld.RowId;
+        var datacenter = ECommons.GameHelpers.Player.HomeWorld.Value.DataCenter.RowId;
+        var world = ECommons.GameHelpers.Player.HomeWorld.RowId;
 
         var report = new Report(datacenter, world, territoryId, detectionTime);
         var content = JsonConvert.SerializeObject(report);
@@ -159,10 +163,10 @@ public class BonusLightManager : IDisposable {
     /// </summary>
     private void RetrieveLastReport() {
         Service.Framework.RunOnFrameworkThread(() => {
-            if (Service.ClientState.LocalPlayer == null)
+            if (!ECommons.GameHelpers.Player.Available)
                 return;
 
-            if (Service.ClientState.LocalPlayer.HomeWorld.RowId is 0)
+            if (ECommons.GameHelpers.Player.HomeWorld.RowId is 0)
                 return;
 
             var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUri}/reports/active");
@@ -197,7 +201,7 @@ public class BonusLightManager : IDisposable {
         }
 
         if (listUpdated.Count > 1) {
-            this.NotifyLightBonus(listUpdated.ToArray());
+            this.NotifyLightBonus([.. listUpdated]);
         }
     }
 
@@ -233,8 +237,17 @@ public class BonusLightManager : IDisposable {
     }
 
     private string GenerateJWT() {
+        // Read the player's content ID from the PlayerState instance (non-static)
+        ulong contentId = 0;
+        unsafe {
+            var ps = PlayerState.Instance();
+            if (ps != null) {
+                contentId = ps->ContentId;
+            }
+        }
+
         var payload = new Dictionary<string, object> {
-            { "sub", Service.ClientState.LocalContentId },
+            { "sub", contentId },
             { "aud", "ZodiacBuddy" },
             { "iss", "ZodiacBuddyDB" },
             { "iat", DateTimeOffset.UtcNow.ToUnixTimeSeconds() },
@@ -242,5 +255,19 @@ public class BonusLightManager : IDisposable {
         };
 
         return this.encoder.Encode(payload, TimeSpan.FromMinutes(15));
+    }
+
+    protected virtual void Dispose(bool disposing) {
+        if (this.disposed) return;
+
+        if (disposing) {
+            Service.ClientState.Login -= this.OnLogin;
+            Service.ClientState.Logout -= this.OnLogout;
+            this.resetTimer.Dispose();
+            this.checkTimer?.Dispose();
+            this.httpClient.Dispose();
+        }
+
+        this.disposed = true;
     }
 }

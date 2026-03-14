@@ -4,11 +4,9 @@ using ECommons.GameHelpers;
 using ECommons.Logging;
 using ECommons.MathHelpers;
 using System;
-using System.Collections.Generic;
 using System.Numerics;
-using ZodiacBuddy.Stages.Atma.Movement;
 
-namespace ZodiacBuddy.Stages.Atma.Unstuck;
+namespace ZodiacBuddy;
 
 public enum AdvancedUnstuckCheckResult
 {
@@ -70,7 +68,7 @@ public sealed class AdvancedUnstuck : IDisposable
         }
         else if (isPathing)
         {
-            if (Vector3.Distance(_lastPosition, Player.Position) >= MinMovementDistance)
+            if (Vector3.Distance(_lastPosition, Player.Position) >= MinMovementDistance && Player.Object != null)
             {
                 _lastPosition = Player.Object.Position;
                 _lastMovement = now;
@@ -104,12 +102,12 @@ public sealed class AdvancedUnstuck : IDisposable
         {
             var rng = new Random();
             float rnd() => (rng.Next(2) == 0 ? -1 : 1) * rng.NextSingle();
-            var newPosition = Player.Position + Vector3.Normalize(new Vector3(rnd(), 0, rnd())) * 5f;
+            var newPosition = Player.Position + (Vector3.Normalize(new Vector3(rnd(), 0, rnd())) * 5f);
 
             _movementController.DesiredPosition = newPosition;
 
             //Use correct MoveTo overload
-            VNavmesh.Path.MoveTo(new List<Vector3> { newPosition }, false);
+            VNavmesh.Path.MoveTo([newPosition], false);
 
             _lastPosition = Player.Object?.Position ?? Vector3.Zero;
             _lastMovement = _unstuckStart;

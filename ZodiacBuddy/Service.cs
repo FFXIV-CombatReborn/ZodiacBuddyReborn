@@ -1,7 +1,6 @@
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using Dalamud.Game.ClientState.Fates;
 using ZodiacBuddy.BonusLight;
 
 namespace ZodiacBuddy;
