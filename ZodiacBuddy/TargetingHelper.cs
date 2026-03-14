@@ -1,15 +1,12 @@
-using Dalamud.Game.ClientState;
-using Dalamud.Game.ClientState.Objects;
-using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
+using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Common.Math;
 using System;
-using static FFXIVClientStructs.FFXIV.Client.Game.UI.MobHunt;
 
-namespace ZodiacBuddy.Helpers;
+namespace ZodiacBuddy;
 
 public static unsafe class TargetingHelper
 {
@@ -84,11 +81,11 @@ public static unsafe class TargetingHelper
     }
     public static unsafe void AutoTargetStoredIdIfVisible()
     {
-        if (_storedTargetId == 0 || _hasAutoTargeted || _killCount >= 3 || Svc.ClientState.LocalPlayer == null)
+        if (_storedTargetId == 0 || _hasAutoTargeted || _killCount >= 3 || Player.Object == null)
             return;
 
 
-        var playerPos = Svc.ClientState.LocalPlayer.Position;
+        var playerPos = Player.Object.Position;
         var currentTarget = Svc.Targets.Target;
 
         foreach (var obj in Svc.Objects)
@@ -107,7 +104,7 @@ public static unsafe class TargetingHelper
                     return;
                 }
 
-                var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address;
+                var native = (GameObject*)obj.Address;
                 if (native != null && native->GetIsTargetable())
                 {
                     TargetSystem.Instance()->Target = (GameObject*)battleChara.Address;
@@ -121,7 +118,7 @@ public static unsafe class TargetingHelper
     }
     public static unsafe void PromoteAggroingEnemy()
     {
-        var player = Svc.ClientState.LocalPlayer;
+        var player = Player.Object;
         if (player == null)
             return;
 

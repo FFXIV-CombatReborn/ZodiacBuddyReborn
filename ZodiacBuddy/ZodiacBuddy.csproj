@@ -1,4 +1,4 @@
-<Project Sdk="Dalamud.NET.Sdk/13.0.0">
+<Project Sdk="Dalamud.NET.Sdk/14.0.2">
   <PropertyGroup>
     <Authors>daemitus, MidoriKami, foophoof</Authors>
     <Description>Complete your Zodiac relic with style.</Description>
@@ -7,6 +7,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ZodiacBuddyReborn</AssemblyName>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
-	  <PackageReference Include="ECommons" Version="3.0.1.9" />
+	  <PackageReference Include="ECommons" Version="3.1.0.27" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="DalamudPackager" Version="14.0.2" />
+    <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.2" />
   </ItemGroup>
 </Project>

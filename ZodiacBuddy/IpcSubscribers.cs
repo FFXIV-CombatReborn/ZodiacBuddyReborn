@@ -6,8 +6,6 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
-using ECommons.DalamudServices;
-using ECommons.EzSharedDataManager;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Ipc.Exceptions;
 

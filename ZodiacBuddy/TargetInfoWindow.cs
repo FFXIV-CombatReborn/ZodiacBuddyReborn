@@ -1,7 +1,6 @@
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
-using Dalamud.Interface.Colors;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using ECommons.Automation.LegacyTaskManager;
@@ -10,16 +9,11 @@ using FFXIVClientStructs.FFXIV.Common.Math;
 using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text.RegularExpressions;
-using System.Threading;
-using ZodiacBuddy;
-using ZodiacBuddy.Helpers;
-using ZodiacBuddy.SmartCaseUtil;
 using ZodiacBuddy.Stages.Atma;
+using ECommons.GameHelpers;
+using ZodiacBuddy.SmartCaseUtil;
 
-namespace ZodiacBuddy.TargetWindow
+namespace ZodiacBuddy
 {
     internal class TargetInfoWindow : Window
     {
@@ -31,7 +25,7 @@ namespace ZodiacBuddy.TargetWindow
         private DateTime lastPathingTime = DateTime.MinValue;
         private bool CompletedObjective => TargetingHelper.KillCount >= 3;
         private bool rsrEnabled = false;
-        private readonly HashSet<ulong> RegisteredKills = new();
+        private readonly HashSet<ulong> RegisteredKills = [];
         private bool fallbackSuppressedPermanently = false;
         public Vector3? CurrentTargetPosition { get; private set; }
         private DateTime fallbackSuppressionUntil = DateTime.MinValue;
@@ -229,24 +223,32 @@ namespace ZodiacBuddy.TargetWindow
             {
                 var previousId = CurrentTargetId;
 
-                var match = Svc.Objects
-                    .Where(obj =>
-                        obj.ObjectKind == ObjectKind.BattleNpc &&
-                        obj is ICharacter c &&
-                        c.CurrentHp > 0 &&
-                        obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(obj => Vector3.Distance(obj.Position, Svc.ClientState.LocalPlayer?.Position ?? Vector3.Zero))
-                    .FirstOrDefault();
+                var playerPosition = Player.Object?.Position ?? Vector3.Zero;
+                ICharacter? match = null;
+                var bestDistance = float.MaxValue;
+
+                foreach (var obj in Svc.Objects)
+                {
+                    if (obj.ObjectKind != ObjectKind.BattleNpc)
+                        continue;
+                    if (obj is not ICharacter c)
+                        continue;
+                    if (c.CurrentHp <= 0)
+                        continue;
+                    if (!obj.Name.TextValue.Equals(CurrentTarget, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var distance = Vector3.Distance(c.Position, playerPosition);
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        match = c;
+                    }
+                }
 
                 if (match != null)
                 {
                     // Only switch if current ID is 0 or the current target is no longer valid
-                    bool currentTargetStillExists = Svc.Objects.Any(x =>
-                        x is ICharacter c &&
-                        x.ObjectKind == ObjectKind.BattleNpc &&
-                        x.GameObjectId == CurrentTargetId &&
-                        c.CurrentHp > 0);
-
                     if (CurrentTargetId == 0)
                     {
                         CurrentTargetId = match.GameObjectId;
@@ -256,11 +258,17 @@ namespace ZodiacBuddy.TargetWindow
                     }
                     else if (match.GameObjectId != CurrentTargetId)
                     {
-                        var previousTarget = Svc.Objects
-                            .OfType<ICharacter>()
-                            .FirstOrDefault(x =>
-                                x.ObjectKind == ObjectKind.BattleNpc &&
-                                x.GameObjectId == CurrentTargetId);
+                        ICharacter? previousTarget = null;
+                        foreach (var obj in Svc.Objects)
+                        {
+                            if (obj is ICharacter character &&
+                                character.ObjectKind == ObjectKind.BattleNpc &&
+                                character.GameObjectId == CurrentTargetId)
+                            {
+                                previousTarget = character;
+                                break;
+                            }
+                        }
 
                         if (previousTarget == null || previousTarget.CurrentHp == 0)
                         {

@@ -9,10 +9,8 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.Automation;
 using ECommons.Automation.LegacyTaskManager;
-using ECommons.Commands;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
-using ECommons.Logging;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 ///using FFXIVClientStructs.FFXIV.Client.System.Framework;
@@ -28,14 +26,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Text;
-using System.Globalization;
-using System.Threading.Tasks;
 using ZodiacBuddy.Stages.Atma.Data;
-using ZodiacBuddy.Stages.Atma.Movement;
-using ZodiacBuddy.Stages.Atma.Unstuck;
-using static FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.Delegates;
-using static FFXIVClientStructs.Havok.Animation.Deform.Skinning.hkaMeshBinding;
-using static ZodiacBuddy.TargetWindow.TargetInfoWindow;
 using RelicNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RelicNote;
 
 namespace ZodiacBuddy.Stages.Atma;
@@ -78,8 +69,8 @@ internal class AtmaManager : IDisposable {
     {
         get
         {
-            var player = Svc.ClientState.LocalPlayer;
-            if (player == null || player.IsDead || Player.IsAnimationLocked)
+            var playerObject = Player.Object;
+            if (playerObject == null || playerObject.IsDead || Player.IsAnimationLocked)
                 return false;
             var c = Svc.Condition;
             if (c[ConditionFlag.BetweenAreas]
@@ -97,7 +88,7 @@ internal class AtmaManager : IDisposable {
                 || c[ConditionFlag.Unconscious]
                 || c[ConditionFlag.ExecutingGatheringAction]
                 || c[ConditionFlag.MountOrOrnamentTransition]
-                || c[85] && !c[ConditionFlag.Gathering])
+                || (c[85] && !c[ConditionFlag.Gathering]))
                 return false;
             return true;
         }
@@ -118,6 +109,8 @@ internal class AtmaManager : IDisposable {
         Svc.Framework.Update -= MonitorPathingAndDismount;
         Svc.Framework.Update -= _advancedUnstuck.RunningUpdate;
         Service.AddonLifecycle.UnregisterListener(ReceiveEventDetour);
+        _advancedUnstuck.OnUnstuckComplete -= OnUnstuckCompleteHandler;
+        _advancedUnstuck.Dispose();
     }
     private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
         var closestAetheryteId = 0u;
@@ -250,7 +243,7 @@ internal class AtmaManager : IDisposable {
         ["the ceruleum road"] = 642,
     };
     private unsafe void Teleport(uint aetheryteId) {
-        if (Service.ClientState.LocalPlayer == null) return;
+        if (Player.Object == null) return;
         if (Service.Configuration.DisableTeleport) return;
 
         Telepo.Instance()->Teleport(aetheryteId, 0);

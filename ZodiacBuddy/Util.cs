@@ -1,6 +1,4 @@
 using System;
-using System.Globalization;
-using System.Text.RegularExpressions;
 using FFXIVClientStructs.FFXIV.Client.Game;
 
 namespace ZodiacBuddy;
