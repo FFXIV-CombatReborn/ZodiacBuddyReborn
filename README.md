@@ -1,4 +1,5 @@
 ## Zodiac Buddy
+[![](https://dcbadge.limes.pink/api/server/p54TZMPnC9)](https://discord.gg/p54TZMPnC9)
 
 This plugin makes the ARR relic experience slightly easier.
 
