@@ -29,7 +29,7 @@ jobs:
 
       - name: Download Dalamud Latest
         run: |
-          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -OutFile latest.zip
           Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
 
       - name: Restore Nuget Packages
@@ -42,7 +42,7 @@ jobs:
         run: Compress-Archive -Path .\build\* -DestinationPath .\build\ZodiacBuddyReborn.zip
 
       - name: Publish Plugin
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ./build/ZodiacBuddyReborn.zip
           token: ${{ secrets.GITHUB_TOKEN }}

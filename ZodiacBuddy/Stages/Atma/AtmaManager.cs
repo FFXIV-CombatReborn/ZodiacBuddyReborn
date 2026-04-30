@@ -447,7 +447,7 @@ internal class AtmaManager : IDisposable {
         {
             if (f.FateId == fateId)
             {
-                if (f.State == FateState.Preparation) break;
+                if (f.State == FateState.Preparing) break;
                 fate = f;
                 return true;
             }
