@@ -1,4 +1,4 @@
-<Project Sdk="Dalamud.NET.Sdk/14.0.2">
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <Authors>daemitus, MidoriKami, foophoof</Authors>
     <Description>Complete your Zodiac relic with style.</Description>
@@ -16,11 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
-	  <PackageReference Include="ECommons" Version="3.1.0.27" />
+	  <PackageReference Include="ECommons" Version="3.2.0.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="DalamudPackager" Version="14.0.2" />
+    <PackageReference Update="DalamudPackager" Version="15.0.0" />
     <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.2" />
   </ItemGroup>
 </Project>

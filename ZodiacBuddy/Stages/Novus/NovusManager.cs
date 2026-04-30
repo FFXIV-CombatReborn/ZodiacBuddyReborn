@@ -13,16 +13,14 @@ namespace ZodiacBuddy.Stages.Novus;
 /// Your buddy for the Novus stage.
 /// </summary>
 internal class NovusManager : IDisposable {
-    private static readonly BonusLightLevel[] BonusLightValues = {
-        #pragma warning disable format,SA1008,SA1025
+    private static readonly BonusLightLevel[] BonusLightValues = [
         new(  8, 4649), // Feeble
         new( 16, 4650), // Gentle
         new( 32, 4651), // Bright
         new( 48, 4652), // Brilliant
         new( 96, 4653), // Blinding
         new(128, 4654), // Newborn Star
-        #pragma warning restore format,SA1008,SA1025
-    };
+    ];
     
     private readonly NovusWindow window;
 
@@ -154,7 +152,7 @@ internal class NovusManager : IDisposable {
         }
     }
 
-    private void OnTerritoryChange(ushort territoryId) {
+    private void OnTerritoryChange(uint territoryId) {
         // Reset territory info
         this.dutyBeginning = null;
         this.onDutyFromBeginning = false;
@@ -165,7 +163,7 @@ internal class NovusManager : IDisposable {
         this.dutyBeginning = DateTime.UtcNow;
     }
 
-    private void OnDutyStart(object? sender, ushort territoryId) {
+    private void OnDutyStart(Dalamud.Game.DutyState.IDutyStateEventArgs args) {
         // Prevent report from player reconnecting during duty or joining an ongoing duty
         // Can set dutyBeginning due to player in cinematic
         this.onDutyFromBeginning = true;
