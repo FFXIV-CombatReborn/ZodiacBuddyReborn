@@ -20,6 +20,13 @@ public class PluginConfiguration : IPluginConfiguration {
 
     [JsonPropertyName("IsAtmaManagerEnabled")]
     public bool IsAtmaManagerEnabled { get; set; } = false;
+
+    /// <summary>Automatically progress to the next enemy set after all three kills are complete.</summary>
+    public bool AutoAdvanceEnemy { get; set; } = false;
+
+    /// <summary>Automatically level-sync to the FATE's level on arrival.</summary>
+    public bool AutoFateLevelSync { get; set; } = true;
+
     public BonusLightConfiguration BonusLight { get; } = new();
 
     public NovusConfiguration Novus { get; } = new();

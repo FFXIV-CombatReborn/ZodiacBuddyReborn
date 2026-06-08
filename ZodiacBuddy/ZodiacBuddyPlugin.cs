@@ -20,12 +20,18 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     private const string TargetWindowCommand = "/ztarget";
 
     private readonly NovusManager novusManager;
+
+    /// <summary>Manages Mysterious Map automation for the Novus stage.</summary>
+    private readonly NovusMapManager novusMapManager;
+
     private readonly BraveManager braveManager;
     private readonly WindowSystem windowSystem;
     internal TargetInfoWindow TargetWindow;
 
     private readonly ConfigWindow configWindow;
-    private readonly AtmaManager atma;
+
+    /// <summary>Gets the Atma stage manager, used by <see cref="TargetInfoWindow"/> and related automation.</summary>
+    internal readonly AtmaManager AtmaManager;
     /// <summary>
     /// Initializes a new instance of the <see cref="ZodiacBuddyPlugin"/> class.
     /// </summary>
@@ -57,16 +63,18 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
 
         Service.BonusLightManager = new BonusLightManager();
         this.novusManager = new NovusManager();
+        this.novusMapManager = new NovusMapManager();
+        this.windowSystem.AddWindow(this.novusMapManager.PickerWindow);
         this.braveManager = new BraveManager();
-        this.atma = new AtmaManager();
-        AtmaManager.OnFallbackPathIssued = () => atma.EnqueueUnmountAfterNav();
+        this.AtmaManager = new AtmaManager();
+        AtmaManager.OnFallbackPathIssued = () => this.AtmaManager.EnqueueUnmountAfterNav();
         AutoDutyIpc.Init();
     }
 
     /// <inheritdoc/>
     public void Dispose() {
-        Svc.Framework.Update -= atma.WaitForBetweenAreasAndExecute;
-        atma.Dispose();
+        Svc.Framework.Update -= this.AtmaManager.WaitForBetweenAreasAndExecute;
+        this.AtmaManager.Dispose();
         Service.CommandManager.RemoveHandler(Command);
         windowSystem.RemoveWindow(TargetWindow);
         Service.CommandManager.RemoveHandler(TargetWindowCommand);
@@ -74,6 +82,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         Service.Interface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
 
         this.novusManager.Dispose();
+        this.novusMapManager.Dispose();
         this.braveManager.Dispose();
         Service.BonusLightManager.Dispose();
         ECommons.ECommonsMain.Dispose();

@@ -179,6 +179,20 @@ internal class ConfigWindow : Window {
             Service.Configuration.BraveCopyTarget = braveCopy;
             Service.Configuration.Save();
         }
+
+        var autoAdvance = Service.Configuration.AutoAdvanceEnemy;
+        if (ImGui.Checkbox("Automatically progress through enemy sets", ref autoAdvance)) {
+            Service.Configuration.AutoAdvanceEnemy = autoAdvance;
+            Service.Configuration.Save();
+            if (!autoAdvance)
+                Service.CommandManager.ProcessCommand("/rotation off");
+        }
+
+        var autoFateSync = Service.Configuration.AutoFateLevelSync;
+        if (ImGui.Checkbox("Level-sync when arriving at a FATE", ref autoFateSync)) {
+            Service.Configuration.AutoFateLevelSync = autoFateSync;
+            Service.Configuration.Save();
+        }
         ImGui.Spacing();
     }
 
@@ -200,6 +214,22 @@ internal class ConfigWindow : Window {
             Service.Configuration.Novus.ShowNumbersInRelicGlass = showNumbers;
             Service.Configuration.Save();
         }
+
+        var autoNav = Service.Configuration.Novus.AutoNavigateAfterMapUse;
+        if (ImGui.Checkbox("Show navigation picker when Alexandrite Map hint opens", ref autoNav)) {
+            Service.Configuration.Novus.AutoNavigateAfterMapUse = autoNav;
+            Service.Configuration.Save();
+        }
+
+        ImGui.BeginDisabled(!Service.Configuration.Novus.AutoNavigateAfterMapUse);
+
+        var autoDig = Service.Configuration.Novus.AutoDigAfterNavigation;
+        if (ImGui.Checkbox("Use Dig when arriving at the dig location", ref autoDig)) {
+            Service.Configuration.Novus.AutoDigAfterNavigation = autoDig;
+            Service.Configuration.Save();
+        }
+
+        ImGui.EndDisabled();
 
         ImGui.Spacing();
     }

@@ -13,6 +13,23 @@ internal struct BraveBook {
     // key: RelicNote row ID
     private static readonly Dictionary<uint, BraveBook> Dataset = [];
 
+    // FATEs that require a prerequisite action before they will spawn.
+    // Chain FATEs: only appear after the preceding FATE in the chain completes.
+    // Escort/navigation FATEs: special notes for the player.
+    private static readonly Dictionary<uint, string> FateNotes = new()
+    {
+        [569] = "Chain FATE: only spawns after \"Gauging North Tidegate\" completes in Western La Noscea.",
+        [571] = "Chain FATE: only spawns after \"Gauging South Tidegate\" completes in Western La Noscea.",
+        [604] = "Note: This FATE takes place underground in a cave in Central Shroud.",
+        [642] = "Escort FATE: find and protect the merchant NPC actively walking through Northern Thanalan.",
+    };
+
+    /// <summary>
+    /// Returns a prerequisite/note string for a FATE, or <c>null</c> if there is none.
+    /// </summary>
+    public static string? GetFateNote(uint fateId)
+        => FateNotes.TryGetValue(fateId, out var msg) ? msg : null;
+
     static BraveBook() {
         PopulateDataset();
     }

@@ -51,6 +51,7 @@ namespace ZodiacBuddy
             Service.Configuration.TargetInfoWindowWasOpen = Service.Plugin.TargetWindow?.IsOpen ?? false;
             Service.Configuration.Save();
             Svc.Framework.Update -= OnFrameworkUpdate;
+            Service.CommandManager.ProcessCommand("/rotation off");
         }
         public enum TargetingState
         {
@@ -76,19 +77,51 @@ namespace ZodiacBuddy
 
                 if (State != TargetingState.AwaitingAtmaPathing)
                 {
-                    Service.PluginLog.Debug("Reached 3 kills. Locking logic and clearing target.");
                     State = TargetingState.AwaitingAtmaPathing;
+
+                    if (!Service.Configuration.AutoAdvanceEnemy)
+                        Service.Plugin.PrintMessage($"All kills for {CurrentTarget} complete!");
 
                     CurrentTargetId = 0;
                     CurrentTargetPosition = null;
                     TargetingHelper.StoredTargetId = 0;
                     TargetingHelper.ResetAutoTargetFlag();
 
-                    if (rsrEnabled)
+                    // Stop any in-progress navigation immediately so we don't path to a 4th enemy
+                    if (VNavmesh.Path.IsRunning())
+                        VNavmesh.Path.Stop();
+
+                    // Only disable RSR if we're not still in combat — if the player
+                    // aggro'd extras alongside the kill target, RSR must stay on so
+                    // they can keep fighting. The out-of-combat branch below handles the
+                    // disable once combat actually ends.
+                    if (rsrEnabled && !Svc.Condition[ConditionFlag.InCombat])
                     {
-                        Service.PluginLog.Debug("Kill complete � disabling RSR via /rotation off.");
                         Service.CommandManager.ProcessCommand("/rotation off");
                         rsrEnabled = false;
+                    }
+
+                    if (Service.Configuration.AutoAdvanceEnemy)
+                    {
+                        // Wait a few seconds so server-side chat messages (e.g. "enemy killed 3/3")
+                        // and loot/XP packets arrive before the teleport kicks in.
+                        var notBefore = DateTime.Now.AddSeconds(1.5);
+
+                        // Poll until safe to teleport: out of combat, navmesh idle, and able to act.
+                        TaskManager.Enqueue(() =>
+                        {
+                            if (DateTime.Now < notBefore) return false;
+                            var atma = Service.Plugin.AtmaManager;
+                            if (Svc.Condition[ConditionFlag.InCombat]) return false;
+                            if (VNavmesh.Path.IsRunning() || VNavmesh.Nav.PathfindInProgress()) return false;
+                            if (!(atma?.CanAct ?? false)) return false;
+                            return true;
+                        }, 120000, "WaitForTeleportReady");
+                        TaskManager.Enqueue(() =>
+                        {
+                            Service.Plugin.AtmaManager?.AutoAdvanceToNextEnemy();
+                            return true;
+                        });
                     }
                 }
 
@@ -123,6 +156,17 @@ namespace ZodiacBuddy
             if (!CompletedObjective)
             {
                 TargetingHelper.AutoTargetStoredIdIfVisible();
+
+                // Stop ground pathing early if already within attack range.
+                if (VNavmesh.Path.IsRunning() && CurrentTargetPosition.HasValue && Player.Object != null)
+                {
+                    var distToTarget = Vector3.Distance(Player.Object.Position, CurrentTargetPosition.Value);
+                    if (distToTarget <= 20f)
+                    {
+                        VNavmesh.Path.Stop();
+                        pendingPathing = false;
+                    }
+                }
             }
         }
         
@@ -153,32 +197,63 @@ namespace ZodiacBuddy
         public void OnAtmaPathingComplete()
         {
             fallbackSuppressedPermanently = false;
-            Service.PluginLog.Debug("Atma Pathing complete, unlocking targeting logic.");
             State = TargetingState.Active;
             pendingPathing = true;
             fallbackSuppressionUntil = DateTime.Now.AddSeconds(0.5);
-            if (!rsrEnabled)
+            TaskManager.Enqueue(new Func<bool?>(() =>
             {
-                Service.PluginLog.Debug("Enabling RSR via /rotation manual.");
-                TaskManager.Enqueue(new Func<bool?>(() =>
-                {
-                    Service.CommandManager.ProcessCommand("/rotation manual");
-                    rsrEnabled = true;
-                    return true;
-                }));
-            }
+                Service.CommandManager.ProcessCommand("/rotation manual");
+                rsrEnabled = true;
+                return true;
+            }));
         }
 
         private void StartPathingToCurrentTarget()
         {
+            if (CompletedObjective)
+            {
+                pendingPathing = false;
+                return;
+            }
             if (VNavmesh.Path.IsRunning())
             {
                 pendingPathing = true;
                 return;
             }
+            // Never start a new path mid-cast — vnavmesh movement cancels the cast bar.
+            if (Svc.Condition[ConditionFlag.Casting])
+            {
+                pendingPathing = false;
+                return;
+            }
+            // Combat hysteresis: while engaged, don't re-path just because the enemy drifted
+            // slightly. Only issue a new path if they're genuinely far away (> 28y).
+            // This prevents the oscillation loop where every 2y of enemy movement issues a
+            // new path that cancels the current attack.
+            if (Svc.Condition[ConditionFlag.InCombat] && Player.Object != null && CurrentTargetPosition != null)
+            {
+                var combatDist = Vector3.Distance(Player.Object.Position, CurrentTargetPosition.Value);
+                if (combatDist <= 28f)
+                {
+                    pendingPathing = false;
+                    return;
+                }
+            }
             if (CurrentTargetPosition != null)
             {
                 var pos = CurrentTargetPosition.Value;
+
+                // Don't start a new path if already within attack range.
+                if (Player.Object != null)
+                {
+                    var dist = Vector3.Distance(Player.Object.Position, pos);
+                    if (dist <= 20f)
+                    {
+                        pendingPathing = false;
+                        return;
+                    }
+                }
+
                 if (!IPCSubscriber.IsReady("vnavmesh"))
                 {
                     pendingPathing = true;
@@ -196,7 +271,7 @@ namespace ZodiacBuddy
                 }
                 VNavmesh.SimpleMove.PathfindAndMoveTo(pos, false);
 
-                Service.ChatGui.Print($"Pathing to {CurrentTarget} at ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1})");
+                Service.Plugin.PrintMessage($"Pathing to {CurrentTarget} at ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F1}).");
                 lastPathingTime = DateTime.Now;
                 pendingPathing = false;
             }
@@ -207,10 +282,8 @@ namespace ZodiacBuddy
                     pendingPathing = false;
                     return;
                 }
-                string fallbackCommand = "/vnav moveflag";
-                Service.PluginLog.Debug($"Issuing fallback pathing: {fallbackCommand}");
-                Service.CommandManager.ProcessCommand(fallbackCommand);
-                Service.ChatGui.Print("No enemy found nearby. Pathing to map flag.");
+                Service.CommandManager.ProcessCommand("/vnav moveflag");
+                Service.Plugin.PrintMessage($"No {CurrentTarget} found nearby — pathing to map flag. Will engage when it appears.");
                 AtmaManager.OnFallbackPathIssued?.Invoke();
                 lastPathingTime = DateTime.Now;
                 pendingPathing = false;
@@ -254,7 +327,6 @@ namespace ZodiacBuddy
                         CurrentTargetId = match.GameObjectId;
                         TargetingHelper.StoredTargetId = match.GameObjectId;
                         TargetingHelper.ResetAutoTargetFlag();
-                        Service.PluginLog.Debug($"Set new target ID: {CurrentTargetId}");
                     }
                     else if (match.GameObjectId != CurrentTargetId)
                     {
@@ -272,8 +344,6 @@ namespace ZodiacBuddy
 
                         if (previousTarget == null || previousTarget.CurrentHp == 0)
                         {
-                            Service.PluginLog.Debug($"Previous target {CurrentTargetId} gone or dead. Checking for duplicate registration.");
-
                             if (CurrentTargetId != 0 && !RegisteredKills.Contains(CurrentTargetId))
                             {
                                 RegisteredKills.Add(CurrentTargetId);
@@ -281,7 +351,7 @@ namespace ZodiacBuddy
                             }
                             else
                             {
-                                Service.PluginLog.Debug($"Skipping duplicate or zero-ID kill registration for {CurrentTargetId}.");
+                                // duplicate or zero-id, skip
                             }
                             CurrentTargetId = 0;
                             CurrentTargetPosition = null;
@@ -290,9 +360,8 @@ namespace ZodiacBuddy
                         }
                         else
                         {
-                            Service.PluginLog.Debug($"Previous target {CurrentTargetId} still alive. Not registering kill.");
+                            // previous target still alive — keep tracking it
                         }
-                        Service.PluginLog.Debug($"Switching target from {previousId} to {match.GameObjectId}.");
                         CurrentTargetId = match.GameObjectId;
                         TargetingHelper.StoredTargetId = match.GameObjectId;
                         TargetingHelper.ResetAutoTargetFlag();
@@ -309,8 +378,6 @@ namespace ZodiacBuddy
                 {
                     if (CurrentTargetId != 0 || CurrentTargetPosition != null)
                     {
-                        Service.PluginLog.Debug($"Lost sight of {CurrentTarget}, checking for kill...");
-
                         if (CurrentTargetId != 0 && !RegisteredKills.Contains(CurrentTargetId))
                         {
                             RegisteredKills.Add(CurrentTargetId);
@@ -318,7 +385,7 @@ namespace ZodiacBuddy
                         }
                         else
                         {
-                            Service.PluginLog.Debug($"Skipping duplicate or zero-ID kill registration for {CurrentTargetId}.");
+                            // duplicate or zero-id, skip
                         }
 
                         CurrentTargetId = 0;
@@ -350,6 +417,8 @@ namespace ZodiacBuddy
             {
                 Service.Configuration.IsAtmaManagerEnabled = atmaEnabled;
                 Service.Configuration.Save();
+                if (!atmaEnabled)
+                    Service.CommandManager.ProcessCommand("/rotation off");
             }
 
             ImGui.Separator();

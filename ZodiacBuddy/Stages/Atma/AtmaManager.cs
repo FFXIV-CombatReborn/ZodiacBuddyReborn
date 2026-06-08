@@ -13,11 +13,9 @@ using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
-///using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
-//using FFXIVClientStructs.FFXIV.Common.Math;
 using FFXVec3 = FFXIVClientStructs.FFXIV.Common.Math.Vector3;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
@@ -46,8 +44,8 @@ internal class AtmaManager : IDisposable {
     public static System.Action? OnFallbackPathIssued;
     private static System.Numerics.Vector3 ToSys(FFXVec3 v) => new(v.X, v.Y, v.Z);
 
+    internal int CurrentEnemyIndex { get; private set; } = -1;
     private bool monitoringPathing = false;
-    private DateTime unmountStartTime;
     private bool monitoringUnstuck = false;
     private bool restartNavAfterUnstuck = false;
     private bool hasQueuedMountTasks = false;
@@ -100,7 +98,6 @@ internal class AtmaManager : IDisposable {
 
         Service.AddonLifecycle.RegisterListener(AddonEvent.PostReceiveEvent, "RelicNoteBook", ReceiveEventDetour);
         Svc.Framework.Update += _advancedUnstuck.RunningUpdate;
-       // Svc.Framework.Update += MonitorUnstuck;
     }
     /// <inheritdoc/>
     public void Dispose() {
@@ -112,65 +109,17 @@ internal class AtmaManager : IDisposable {
         _advancedUnstuck.OnUnstuckComplete -= OnUnstuckCompleteHandler;
         _advancedUnstuck.Dispose();
     }
-    private static uint GetNearestAetheryte(MapLinkPayload mapLink) {
-        var closestAetheryteId = 0u;
-        var closestDistance = double.MaxValue;
-
-        static float ConvertRawPositionToMapCoordinate(int pos, float scale) {
-            var c = scale / 100.0f;
-            var scaledPos = pos * c / 1000.0f;
-
-            return (41.0f / c * ((scaledPos + 1024.0f) / 2048.0f)) + 1.0f;
-        }
-
-        var aetherytes = Service.DataManager.GetExcelSheet<Aetheryte>();
-        var mapMarkers = Service.DataManager.GetSubrowExcelSheet<MapMarker>();
-
-        foreach (var aetheryte in aetherytes) {
-            if (!aetheryte.IsAetheryte)
-                continue;
-
-            if (aetheryte.Territory.Value.RowId != mapLink.TerritoryType.RowId)
-                continue;
-
-            var map = aetheryte.Map.Value;
-            var scale = map.SizeFactor;
-            var name = map.PlaceName.Value.Name.ExtractText();
-
-            var mapMarker = mapMarkers
-	            .SelectMany(markers => markers)
-	            .FirstOrDefault(m => m.DataType == 3 && m.DataKey.RowId == aetheryte.RowId);
-            
-            if (mapMarker.RowId is 0) {
-                Service.PluginLog.Debug($"Could not find aetheryte: {name}");
-                return 0;
-            }
-
-            var aetherX = ConvertRawPositionToMapCoordinate(mapMarker.X, scale);
-            var aetherY = ConvertRawPositionToMapCoordinate(mapMarker.Y, scale);
-
-            // var aetheryteName = aetheryte.PlaceName.Value!;
-            // Service.PluginLog.Debug($"Aetheryte found: {aetherName} ({aetherX} ,{aetherY})");
-            var distance = Math.Pow(aetherX - mapLink.XCoord, 2) + Math.Pow(aetherY - mapLink.YCoord, 2);
-            if (distance < closestDistance)
-            {
-                closestDistance = distance;
-                closestAetheryteId = aetheryte.RowId;
-            }
-        }
-        return closestAetheryteId;
-    }
     private static string Normalize(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return string.Empty;
 
         // Turn SeString-ish residuals into plain text expectations
         s = s.Normalize(NormalizationForm.FormKC)
-             .Replace('’', '\'')
-             .Replace('“', '"').Replace('”', '"')
-             .Replace('…', '.')
-             .Replace('–', '-') // en dash
-             .Replace('—', '-') // em dash
+             .Replace('ï¿½', '\'')
+             .Replace('ï¿½', '"').Replace('ï¿½', '"')
+             .Replace('ï¿½', '.')
+             .Replace('ï¿½', '-') // en dash
+             .Replace('ï¿½', '-') // em dash
              .Replace('\u00A0', ' '); // NBSP -> space
 
         // collapse whitespace & trim
@@ -196,11 +145,26 @@ internal class AtmaManager : IDisposable {
         Svc.Framework.Update -= MonitorPathingAndDismount;
         Svc.Framework.Update -= MonitorUnstuck;
 
+        // Disable RSR for the transit to the next target; it will be re-enabled
+        // once we arrive at the new destination.
+        Service.CommandManager.ProcessCommand("/rotation off");
+
+        // Abort any tasks left over from the previous cycle (dismount sequence,
+        // OnAtmaPathingComplete, ground-path, etc.) so they cannot fire against
+        // the new cycle's state. Without this, OnAtmaPathingComplete from the old
+        // cycle fires prematurely, sets State=Active in TargetInfoWindow, and
+        // causes SetTarget() to bail early â€” leaving kill count at 3 and the new
+        // enemy never properly initialized.
+        TaskManager.Abort();
+        if (VNavmesh.Path.IsRunning())
+            VNavmesh.Path.Stop();
+
         monitoringPathing = false;
         monitoringUnstuck = false;
 
         _unstuckPhase = UnstuckPhase.Idle;
         restartNavAfterUnstuck = false;
+        _pathingContext = PathingContext.None;
 
         hasEnteredBetweenAreas = false;
         hasQueuedMountTasks = false;
@@ -242,11 +206,11 @@ internal class AtmaManager : IDisposable {
         ["air supply"] = 633,
         ["the ceruleum road"] = 642,
     };
-    private unsafe void Teleport(uint aetheryteId) {
-        if (Player.Object == null) return;
-        if (Service.Configuration.DisableTeleport) return;
-
-        Telepo.Instance()->Teleport(aetheryteId, 0);
+    private unsafe bool Teleport(uint aetheryteId)
+    {
+        if (Player.Object == null) return false;
+        if (Service.Configuration.DisableTeleport) return true; // intentionally disabled, treat as success
+        return Telepo.Instance()->Teleport(aetheryteId, 0);
     }
     private unsafe void ReceiveEventDetour(AddonEvent type, AddonArgs args) {
         try {
@@ -325,27 +289,21 @@ internal class AtmaManager : IDisposable {
         }
         if (index == 0)
         {
-            ResetRunStateForNewCycle();
-            _pendingFateId = null;
-            Service.Plugin.TargetWindow?.SetTarget(selectedTarget.Name);
-
-            var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
-            if (aetheryteId == 0)
+            CurrentEnemyIndex = targetComponent switch
             {
-                Service.PluginLog.Warning($"Could not find an aetheryte for {zoneName}");
-                return;
-            }
-            Service.GameGui.OpenMapWithMapLink(selectedTarget.Position);
-            this.Teleport(aetheryteId);
-            if (!Service.Configuration.IsAtmaManagerEnabled)
-                return;
-            _pathingContext = PathingContext.Enemy;
-            ResetTeleportCycleFlags();
-            if (!awaitingTeleportFromRelicBookClick)
-            {
-                awaitingTeleportFromRelicBookClick = true;
-                Svc.Framework.Update += WaitForBetweenAreasAndExecute; 
-            }
+                _ when IsOwnerNode(targetComponent, addon->Enemy0.CheckBox) => 0,
+                _ when IsOwnerNode(targetComponent, addon->Enemy1.CheckBox) => 1,
+                _ when IsOwnerNode(targetComponent, addon->Enemy2.CheckBox) => 2,
+                _ when IsOwnerNode(targetComponent, addon->Enemy3.CheckBox) => 3,
+                _ when IsOwnerNode(targetComponent, addon->Enemy4.CheckBox) => 4,
+                _ when IsOwnerNode(targetComponent, addon->Enemy5.CheckBox) => 5,
+                _ when IsOwnerNode(targetComponent, addon->Enemy6.CheckBox) => 6,
+                _ when IsOwnerNode(targetComponent, addon->Enemy7.CheckBox) => 7,
+                _ when IsOwnerNode(targetComponent, addon->Enemy8.CheckBox) => 8,
+                _ when IsOwnerNode(targetComponent, addon->Enemy9.CheckBox) => 9,
+                _ => -1,
+            };
+            SelectEnemy(selectedTarget);
             return;
         }
         else if (index == 1)
@@ -385,6 +343,17 @@ internal class AtmaManager : IDisposable {
             ResetRunStateForNewCycle();
             _pathingContext = PathingContext.Fate;
 
+            var fateNote = BraveBook.GetFateNote(selectedTarget.FateId);
+            if (fateNote != null)
+            {
+                var noteSb = new SeStringBuilder()
+                    .AddUiForeground("[ZodiacBuddy] ", 60)
+                    .AddUiForeground(selectedTarget.Name, 62)
+                    .AddText(" \u2014 ")
+                    .AddText(fateNote);
+                Service.Plugin.PrintMessage(noteSb.BuiltString);
+            }
+
             hasEnteredBetweenAreas = false;
             hasQueuedMountTasks = false;
             var norm = Normalize(selectedTarget.Name);
@@ -402,7 +371,7 @@ internal class AtmaManager : IDisposable {
             var fatePos = selectedTarget.Position;
             Service.GameGui.OpenMapWithMapLink(fatePos);
 
-            var aetheryteId = GetNearestAetheryte(fatePos);
+            var aetheryteId = Util.GetNearestAetheryte(fatePos);
             if (aetheryteId == 0)
             {
                 Service.PluginLog.Warning("[ZBR] No aetheryte found for selected FATE zone.");
@@ -421,7 +390,7 @@ internal class AtmaManager : IDisposable {
         {
             ResetRunStateForNewCycle();
             _pendingFateId = null;
-            var aetheryteId = GetNearestAetheryte(selectedTarget.Position);
+            var aetheryteId = Util.GetNearestAetheryte(selectedTarget.Position);
             if (aetheryteId == 0)
             {
                 Service.PluginLog.Warning($"Could not find an aetheryte for {zoneName}");
@@ -455,6 +424,7 @@ internal class AtmaManager : IDisposable {
         fate = default!;
         return false;
     }
+
     private void MonitorUnstuck(IFramework _)
     {
         if (Player.Object == null) return;
@@ -505,6 +475,94 @@ internal class AtmaManager : IDisposable {
         }
     }
 
+    internal void SelectEnemy(BraveTarget enemy)
+    {
+        ResetRunStateForNewCycle();
+        _pendingFateId = null;
+        Service.Plugin.TargetWindow?.SetTarget(enemy.Name);
+
+        var aetheryteId = Util.GetNearestAetheryte(enemy.Position);
+        if (aetheryteId == 0)
+        {
+            Service.PluginLog.Warning($"[AutoAdvance] Could not find an aetheryte for {enemy.ZoneName}");
+            return;
+        }
+        Service.GameGui.OpenMapWithMapLink(enemy.Position);
+
+        // Attempt teleport, retrying every 2s until it succeeds or 5 attempts are exhausted.
+        // Conditions (InCombat, CanAct) are also re-checked on each attempt.
+        var attempts = 0;
+        var retryAfter = DateTime.MinValue;
+        TaskManager.Enqueue(() =>
+        {
+            var c = Svc.Condition;
+            if (c[ConditionFlag.InCombat] || c[ConditionFlag.BetweenAreas]) return false;
+            if (DateTime.Now < retryAfter) return false;
+            if (!CanAct) return false;
+
+            if (!Teleport(aetheryteId))
+            {
+                attempts++;
+                if (attempts >= 5)
+                {
+                    Service.PluginLog.Warning($"[ZBR] Teleport to aetheryte {aetheryteId} failed after {attempts} attempts, giving up.");
+                    return true;
+                }
+                retryAfter = DateTime.Now.AddSeconds(2);
+                return false;
+            }
+
+            Service.Plugin.PrintMessage($"Moving to: {enemy.Name}");
+
+            if (!Service.Configuration.IsAtmaManagerEnabled) return true;
+            _pathingContext = PathingContext.Enemy;
+            ResetTeleportCycleFlags();
+            if (!awaitingTeleportFromRelicBookClick)
+            {
+                awaitingTeleportFromRelicBookClick = true;
+                Svc.Framework.Update += WaitForBetweenAreasAndExecute;
+            }
+            return true;
+        }, 120000, "TeleportWithRetry");
+    }
+
+    internal unsafe void AutoAdvanceToNextEnemy()
+    {
+        if (!Service.Configuration.AutoAdvanceEnemy) return;
+
+        var relicNote = RelicNote.Instance();
+        if (relicNote == null)
+        {
+            Service.PluginLog.Warning("[AutoAdvance] RelicNote instance unavailable.");
+            return;
+        }
+
+        var bookId = relicNote->RelicNoteId;
+        BraveBook book;
+        try { book = BraveBook.GetValue(bookId); }
+        catch
+        {
+            Service.PluginLog.Warning($"[AutoAdvance] No book data for bookId={bookId}.");
+            return;
+        }
+
+        var enemies = book.Enemies;
+        int startIndex = CurrentEnemyIndex >= 0 ? (CurrentEnemyIndex + 1) % enemies.Length : 0;
+        for (int i = 0; i < enemies.Length; i++)
+        {
+            int idx = (startIndex + i) % enemies.Length;
+            if (relicNote->GetMonsterProgress(idx) < 3)
+            {
+                CurrentEnemyIndex = idx;
+                SelectEnemy(enemies[idx]);
+                return;
+            }
+        }
+
+        Service.Plugin.PrintMessage("All enemies in this book are complete!");
+        Service.CommandManager.ProcessCommand("/rotation off");
+    }
+
     internal void WaitForBetweenAreasAndExecute(IFramework framework)
     {
         if (!Service.Configuration.IsAtmaManagerEnabled || !awaitingTeleportFromRelicBookClick)
@@ -539,7 +597,7 @@ internal class AtmaManager : IDisposable {
                 else
                 {
                     Service.PluginLog.Debug("[ZBR] Clicked FATE id not present/active. Holding at aetheryte.");
-                    hasQueuedMountTasks = true; 
+                    hasQueuedMountTasks = true;
                 }
             }
             else
@@ -559,19 +617,67 @@ internal class AtmaManager : IDisposable {
         awaitingTeleportFromRelicBookClick = false;
         Svc.Framework.Update -= WaitForBetweenAreasAndExecute;
     }
+    /// <summary>
+    /// Aborts an in-progress inter-kill mount cycle (e.g. because the next enemy aggro'd
+    /// before the flight finished). Stops navigation, clears the task queue, unhooks the
+    /// dismount monitor, and immediately dismounts if still mounted.
+    /// </summary>
+    public unsafe void AbortMountCycle()
+    {
+        if (VNavmesh.Path.IsRunning())
+            VNavmesh.Path.Stop();
+
+        TaskManager.Abort();
+
+        Svc.Framework.Update -= MonitorPathingAndDismount;
+        monitoringPathing = false;
+        StopUnstuckMonitoring();
+
+        _unstuckPhase = UnstuckPhase.Idle;
+        restartNavAfterUnstuck = false;
+        _pathingContext = PathingContext.None;
+
+        // Immediate dismount so the player can act in combat.
+        var am = ActionManager.Instance();
+        if (Svc.Condition[ConditionFlag.Mounted])
+            am->UseAction(ActionType.Mount, 0);
+    }
+
+    /// <summary>
+    /// Mount, fly to <paramref name="destination"/>, then dismount. Intended for inter-kill transit so
+    /// the player reaches the next enemy spawn quickly. <see cref="MonitorPathingAndDismount"/> will
+    /// call <see cref="Plugin.TargetWindow"/>.OnAtmaPathingComplete() after landing.
+    /// </summary>
+    public void MountFlyAndDismountToEnemy(Vector3 destination)
+    {
+        _pathingContext = PathingContext.Enemy;
+        EnqueueMountAndFlyTo(destination);
+    }
+
+    /// <summary>
+    /// Mount and fly to the map flag, then dismount. Used when the next enemy position is not yet known.
+    /// </summary>
+    public void MountAndFlyFlagToEnemy()
+    {
+        _pathingContext = PathingContext.Enemy;
+        EnqueueMountUp();
+    }
+
     private unsafe void EnqueueMountAndFlyTo(System.Numerics.Vector3 destination)
     {
         TaskManager.Enqueue(() => NavReady);
-        // Mount (skip if already mounted)
+        // Mount (skip if already mounted). Retry each tick until the action becomes available
+        // so a brief post-combat window where mounting is disallowed doesn't silently skip mounting.
         TaskManager.Enqueue(() =>
         {
             if (Svc.Condition[ConditionFlag.Mounted]) return true;
             var am = ActionManager.Instance();
             const uint rouletteId = 9;
-            if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) == 0)
-                am->UseAction(ActionType.GeneralAction, rouletteId);
+            if (am->GetActionStatus(ActionType.GeneralAction, rouletteId) != 0)
+                return false; // not available yet â€” retry next tick
+            am->UseAction(ActionType.GeneralAction, rouletteId);
             return true;
-        });
+        }, 30000, "MountRoulette");
         TaskManager.Enqueue(() => _advancedUnstuck.IsRunning || Svc.Condition[ConditionFlag.Mounted]);
 
         TaskManager.Enqueue(() =>
@@ -639,7 +745,6 @@ internal class AtmaManager : IDisposable {
 
         Svc.Framework.Update -= MonitorPathingAndDismount;
         monitoringPathing = true;
-        unmountStartTime = DateTime.Now;
         Svc.Framework.Update += MonitorPathingAndDismount;
     }
     private unsafe void MonitorPathingAndDismount(IFramework _)
@@ -647,6 +752,14 @@ internal class AtmaManager : IDisposable {
         if (_advancedUnstuck.IsRunning)
             return;
         if (VNavmesh.Nav.PathfindInProgress() || VNavmesh.Path.IsRunning())
+            return;
+        // Guard against the race window between issuing /vnav flyflag (or PathfindAndMoveTo)
+        // and vnavmesh actually starting. Without this, MonitorPathingAndDismount fires in the
+        // first few frames while IsRunning()=false, calls EnqueueDismount(), and the player
+        // dismounts at the aetheryte without ever flying. _unstuckPhase stays at
+        // AwaitingPathStart until MonitorUnstuck confirms vnavmesh has waypoints, providing
+        // a clean signal that the path has genuinely begun.
+        if (_unstuckPhase == UnstuckPhase.AwaitingPathStart)
             return;
         if (!monitoringPathing)
             return;
@@ -686,14 +799,7 @@ internal class AtmaManager : IDisposable {
                         var tWin = Service.Plugin.TargetWindow;
                         var posOpt = tWin?.CurrentTargetPosition;
                         if (posOpt is FFXVec3 ffxPos)
-                        {
                             VNavmesh.SimpleMove.PathfindAndMoveTo(ToSys(ffxPos), false);
-                        }
-                        //else
-                        //{
-                            // Optional FALLBACK(commed out for if i need it later)
-                            //Chat.ExecuteCommand("/vnav moveflag");
-                        //}
                         return true;
                     });
 
@@ -704,6 +810,30 @@ internal class AtmaManager : IDisposable {
                     hasEnteredBetweenAreas = false;
                     awaitingTeleportFromRelicBookClick = false;
                     hasQueuedMountTasks = false;
+
+                    Service.CommandManager.ProcessCommand("/rotation manual");
+
+                    // Level-sync if configured and needed.
+                    if (Service.Configuration.AutoFateLevelSync)
+                    {
+                        TaskManager.Enqueue(() =>
+                        {
+                            unsafe
+                            {
+                                var fm = FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager.Instance();
+                                if (fm == null) return true;
+                                var fate = fm->CurrentFate;
+                                // Not inside the FATE circle yet â€” retry next frame.
+                                if (fate == null) return null;
+
+                                // Only sync if player is above the FATE's max participating level
+                                // and not already synced to this fate.
+                                if (Player.Level > fate->MaxLevel && fm->SyncedFateId != fate->FateId)
+                                    fm->LevelSync();
+                            }
+                            return true;
+                        }, 10000, "FateLevelSync");
+                    }
                 }
                 _pathingContext = PathingContext.None;
                 _unstuckPhase = UnstuckPhase.Idle;

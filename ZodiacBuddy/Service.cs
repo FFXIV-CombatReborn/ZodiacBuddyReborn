@@ -1,6 +1,8 @@
+using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+
 using ZodiacBuddy.BonusLight;
 
 namespace ZodiacBuddy;
@@ -10,11 +12,13 @@ public class Service {
     [PluginService] public static IDalamudPluginInterface Interface { get; set; }
     [PluginService] public static IChatGui ChatGui { get; set; }
     [PluginService] public static IClientState ClientState { get; set; }
+    [PluginService] public static IContextMenu ContextMenu { get; set; }
     [PluginService] public static IDutyState DutyState { get; set; }
     [PluginService] public static ICommandManager CommandManager { get; set; }
     [PluginService] public static IDataManager DataManager { get; set; }
     [PluginService] public static IFramework Framework { get; set; }
     [PluginService] public static IGameGui GameGui { get; set; }
+    [PluginService] public static ITextureProvider TextureProvider { get; set; }
     [PluginService] public static IToastGui Toasts { get; set; }
     [PluginService] public static IPluginLog PluginLog { get; set; }
     [PluginService] public static IAddonLifecycle AddonLifecycle { get; set; }
