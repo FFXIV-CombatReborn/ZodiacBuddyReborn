@@ -2,99 +2,19 @@
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Logging;
-using ECommons.MathHelpers;
 using System;
 using System.Numerics;
 
 namespace ZodiacBuddy;
 
-public enum AdvancedUnstuckCheckResult
-{
-    Pass,
-    Wait,
-    Fail
-}
-
 public sealed class AdvancedUnstuck : IDisposable
 {
-    public event Action? OnUnstuckCompleted;
+    public event Action? Completed;
     private const double UnstuckDuration = 1.0;
-    private const double CheckExpiration = 1.0;
-    private const float MinMovementDistance = 2.0f;
-    private const double NavResetCooldown = 5.0;  // seconds cooldown before checking unstuck again
-    private const double NavResetThreshold = 3.0; // seconds stuck before triggering unstuck
-
     private readonly OverrideMovement _movementController = new();
-    private DateTime _lastMovement;
     private DateTime _unstuckStart;
-    private DateTime _lastCheck;
-    private Vector3 _lastPosition;
-    private bool _lastWasFailure;
 
     public bool IsRunning => _movementController.Enabled;
-
-    public Action? OnUnstuckComplete { get; internal set; }
-
-    public AdvancedUnstuckCheckResult Check(Vector3 destination, bool isPathGenerating, bool isPathing)
-    {
-        if (IsRunning)
-            return AdvancedUnstuckCheckResult.Fail;
-
-        var now = DateTime.Now;
-
-        // On cooldown, not navigating or near the destination: disable tracking and reset
-        if (now.Subtract(_unstuckStart).TotalSeconds < NavResetCooldown
-            || destination == default
-            || Vector2.Distance(destination.ToVector2(), Player.Position.ToVector2()) < 3.5)
-        {
-            _lastCheck = DateTime.MinValue;
-            return AdvancedUnstuckCheckResult.Pass;
-        }
-
-        var lastCheck = _lastCheck;
-        _lastCheck = now;
-
-        if (now.Subtract(lastCheck).TotalSeconds > CheckExpiration)
-        {
-            _lastPosition = Player.Position;
-            _lastMovement = now;
-            _lastWasFailure = false;
-            return AdvancedUnstuckCheckResult.Pass;
-        }
-        if (isPathGenerating)
-        {
-            _lastPosition = Player.Position;
-            _lastMovement = now;
-        }
-        else if (isPathing)
-        {
-            if (Vector3.Distance(_lastPosition, Player.Position) >= MinMovementDistance && Player.Object != null)
-            {
-                _lastPosition = Player.Object.Position;
-                _lastMovement = now;
-            }
-            else if (now.Subtract(_lastMovement).TotalSeconds > NavResetThreshold)
-            {
-                Start();
-            }
-        }
-        else if (_lastWasFailure)
-        {
-            Console.WriteLine($"Advanced Unstuck: vnavmesh failure detected.");
-            Start();
-        }
-        _lastWasFailure = !isPathGenerating && !isPathing;
-        return IsRunning ? AdvancedUnstuckCheckResult.Fail : _lastWasFailure ? AdvancedUnstuckCheckResult.Wait : AdvancedUnstuckCheckResult.Pass;
-    }
-
-    public void Force()
-    {
-        if (!IsRunning)
-        {
-            Console.WriteLine("Advanced Unstuck: force start.");
-            Start();
-        }
-    }
 
     public void Start()
     {
@@ -109,13 +29,11 @@ public sealed class AdvancedUnstuck : IDisposable
             //Use correct MoveTo overload
             VNavmesh.Path.MoveTo([newPosition], false);
 
-            _lastPosition = Player.Object?.Position ?? Vector3.Zero;
-            _lastMovement = _unstuckStart;
             _movementController.Enabled = true;
             _unstuckStart = DateTime.Now;
             Svc.Framework.Update += RunningUpdate;
 
-            PluginLog.Debug($"AdvancedUnstuck: Initiating movement to {newPosition}");
+            PluginLog.Verbose($"[ZodiacBuddy/NAV] AdvancedUnstuck: Initiating movement to {newPosition}");
         }
     }
 
@@ -128,22 +46,34 @@ public sealed class AdvancedUnstuck : IDisposable
         }
     }
 
+    public void Cancel()
+    {
+        if (!IsRunning)
+            return;
+
+        VNavmesh.Path.Stop();
+        Deactivate();
+    }
+
     private void Stop()
     {
-        if (IsRunning)
-        {
-            _movementController.Enabled = false;
-            Svc.Framework.Update -= RunningUpdate;
-            PluginLog.Debug("[ZodiacBuddy] AdvancedUnstuck: Movement override stopped.");
+        if (!IsRunning)
+            return;
 
-            //Trigger post-unstuck callback
-            OnUnstuckCompleted?.Invoke();
-        }
+        Deactivate();
+        Completed?.Invoke();
+    }
+
+    private void Deactivate()
+    {
+        _movementController.Enabled = false;
+        Svc.Framework.Update -= RunningUpdate;
+        PluginLog.Verbose("[ZodiacBuddy/NAV] AdvancedUnstuck: Movement override stopped.");
     }
 
     public void Dispose()
     {
-        Stop();
+        Cancel();
         _movementController.Dispose();
     }
 }

@@ -1,9 +1,11 @@
 using Dalamud.Configuration;
 using Dalamud.Game.Text;
 using Newtonsoft.Json;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using ZodiacBuddy.BonusLight;
 using ZodiacBuddy.InformationWindow;
+using ZodiacBuddy.Stages.Animus;
 using ZodiacBuddy.Stages.Brave;
 using ZodiacBuddy.Stages.Novus;
 
@@ -27,6 +29,10 @@ public class PluginConfiguration : IPluginConfiguration {
     public BraveConfiguration Brave { get; } = new();
 
     public InformationWindowConfiguration InformationWindow { get; } = new();
+
+    public FateGrinderConfiguration FateGrinder { get; } = new();
+
+    public HashSet<ushort> FateGrinderBlacklist { get; set; } = [];
 
     public bool DisableTeleport = false;
 

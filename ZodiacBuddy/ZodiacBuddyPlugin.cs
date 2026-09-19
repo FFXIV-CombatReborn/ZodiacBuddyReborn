@@ -4,7 +4,7 @@ using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using ZodiacBuddy.BonusLight;
-using ZodiacBuddy.Stages.Atma;
+using ZodiacBuddy.Stages.Animus;
 using ZodiacBuddy.Stages.Brave;
 using ZodiacBuddy.Stages.Novus;
 using ECommons;
@@ -18,6 +18,11 @@ namespace ZodiacBuddy;
 public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     private const string Command = "/pzodiac";
     private const string TargetWindowCommand = "/ztarget";
+#if DEBUG
+    private const string FateDebugCommand = "/zfate";
+    private const string LeveDebugCommand = "/zleve";
+    private const string FateGrinderCommand = "/zgrind";
+#endif
 
     private readonly NovusManager novusManager;
     private readonly BraveManager braveManager;
@@ -25,7 +30,14 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     internal TargetInfoWindow TargetWindow;
 
     private readonly ConfigWindow configWindow;
-    private readonly AtmaManager atma;
+    private readonly AnimusManager animus;
+    private readonly AnimusAutomationFacade automation;
+#if DEBUG
+    private readonly FateDebugWindow fateDebugWindow;
+    private readonly FateGrinderWindow fateGrinderWindow;
+    private readonly FateGrinderMultiPullWindow fateGrinderMultiPullWindow;
+    private readonly LeveDebugWindow leveDebugWindow;
+#endif
     /// <summary>
     /// Initializes a new instance of the <see cref="ZodiacBuddyPlugin"/> class.
     /// </summary>
@@ -40,10 +52,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         this.windowSystem = new WindowSystem("ZodiacBuddy");
 
         this.windowSystem.AddWindow(this.configWindow = new ConfigWindow());
-        TargetWindow = new TargetInfoWindow();
-        windowSystem.AddWindow(TargetWindow);
         Service.Interface.UiBuilder.OpenConfigUi += this.OnOpenConfigUi;
-        Service.Interface.UiBuilder.Draw += this.windowSystem.Draw;
 
         Service.CommandManager.AddHandler(Command, new CommandInfo(this.OnCommand) {
             HelpMessage = "Open a window to edit various settings.",
@@ -58,19 +67,55 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         Service.BonusLightManager = new BonusLightManager();
         this.novusManager = new NovusManager();
         this.braveManager = new BraveManager();
-        this.atma = new AtmaManager();
-        AtmaManager.OnFallbackPathIssued = () => atma.EnqueueUnmountAfterNav();
+        this.animus = new AnimusManager();
+        this.automation = new AnimusAutomationFacade(animus);
+        TargetWindow = new TargetInfoWindow(automation);
+        windowSystem.AddWindow(TargetWindow);
+#if DEBUG
+        this.windowSystem.AddWindow(this.fateDebugWindow = new FateDebugWindow(automation));
+        Service.CommandManager.AddHandler(FateDebugCommand, new CommandInfo(OnFateDebugCommand)
+        {
+            HelpMessage = "Open the Animus FATE automation test harness.",
+            ShowInHelp = true,
+        });
+        this.windowSystem.AddWindow(this.fateGrinderMultiPullWindow = new FateGrinderMultiPullWindow());
+        this.windowSystem.AddWindow(this.fateGrinderWindow = new FateGrinderWindow(automation, fateGrinderMultiPullWindow));
+        Service.CommandManager.AddHandler(FateGrinderCommand, new CommandInfo(OnFateGrinderCommand)
+        {
+            HelpMessage = "Open the ZodiacBuddy FATE grinder.",
+            ShowInHelp = true,
+        });
+        this.windowSystem.AddWindow(this.leveDebugWindow = new LeveDebugWindow(automation));
+        Service.CommandManager.AddHandler(LeveDebugCommand, new CommandInfo(OnLeveDebugCommand)
+        {
+            HelpMessage = "Open the Animus leve test harness. Optional: /zleve <LeveId>.",
+            ShowInHelp = true,
+        });
+#endif
         AutoDutyIpc.Init();
+        RSRIPC.Init();
+        BossModIPC.Init();
+        Service.Interface.UiBuilder.Draw += this.windowSystem.Draw;
     }
 
     /// <inheritdoc/>
     public void Dispose() {
-        Svc.Framework.Update -= atma.WaitForBetweenAreasAndExecute;
-        atma.Dispose();
+        Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;
+        Svc.Framework.Update -= animus.WaitForBetweenAreasAndExecute;
+        animus.Dispose();
         Service.CommandManager.RemoveHandler(Command);
+        TargetWindow.Dispose();
         windowSystem.RemoveWindow(TargetWindow);
         Service.CommandManager.RemoveHandler(TargetWindowCommand);
-        Service.Interface.UiBuilder.Draw -= this.windowSystem.Draw;
+#if DEBUG
+        Service.CommandManager.RemoveHandler(FateDebugCommand);
+        windowSystem.RemoveWindow(fateDebugWindow);
+        Service.CommandManager.RemoveHandler(FateGrinderCommand);
+        windowSystem.RemoveWindow(fateGrinderWindow);
+        windowSystem.RemoveWindow(fateGrinderMultiPullWindow);
+        Service.CommandManager.RemoveHandler(LeveDebugCommand);
+        windowSystem.RemoveWindow(leveDebugWindow);
+#endif
         Service.Interface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
 
         this.novusManager.Dispose();
@@ -78,6 +123,27 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         Service.BonusLightManager.Dispose();
         ECommons.ECommonsMain.Dispose();
     }
+#if DEBUG
+    internal void OpenFateGrinderWindow()
+        => fateGrinderWindow.IsOpen = true;
+
+    internal void OpenFateDebugWindow()
+        => fateDebugWindow.IsOpen = true;
+
+    private void OnFateDebugCommand(string command, string arguments)
+        => fateDebugWindow.IsOpen = true;
+
+    private void OnLeveDebugCommand(string command, string arguments)
+    {
+        if (uint.TryParse(arguments.Trim(), out var leveId))
+            leveDebugWindow.SelectLeve(leveId);
+        leveDebugWindow.IsOpen = true;
+    }
+
+    private void OnFateGrinderCommand(string command, string arguments)
+        => fateGrinderWindow.IsOpen = true;
+#endif
+
     private void OnTargetWindowCommand(string command, string arguments)
     {
         TargetWindow.IsOpen = true;
@@ -88,7 +154,7 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
     /// <param name="message">Message to send.</param>
     public void PrintMessage(SeString message) {
         var sb = new SeStringBuilder()
-            .AddUiForeground("[ZodiacBuddy] ", 45)
+            .AddUiForeground("[ZodiacBuddyReborn] ", 45)
             .Append(message);
 
         Service.ChatGui.Print(new XivChatEntry {
@@ -97,12 +163,24 @@ public sealed class ZodiacBuddyPlugin : IDalamudPlugin {
         });
     }
 
+    public void PrintStepProgress(string message)
+    {
+        if (Service.Configuration.BraveEchoTarget)
+            PrintMessage(message);
+    }
+
+    public void PrintStepProgress(SeString message)
+    {
+        if (Service.Configuration.BraveEchoTarget)
+            PrintMessage(message);
+    }
+
     /// <summary>
     /// Print an error message.
     /// </summary>
     /// <param name="message">Message to send.</param>
     public static void PrintError(string message)
-        => Service.ChatGui.PrintError($"[ZodiacBuddy] {message}");
+        => Service.ChatGui.PrintError($"[ZodiacBuddyReborn] {message}");
     private void OnOpenConfigUi()
         => this.configWindow.IsOpen = true;
 

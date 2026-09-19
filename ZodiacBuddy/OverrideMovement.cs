@@ -57,7 +57,6 @@ public unsafe class OverrideMovement : IDisposable
             }
         }
     }
-    public AdvancedUnstuck? AdvancedUnstuck { get; set; }
     public bool IgnoreUserInput; // if true - override even if user tries to change camera orientation, otherwise override only if user does nothing
     public Vector3 DesiredPosition;
     public float Precision = 0.01f;
@@ -104,19 +103,11 @@ public unsafe class OverrideMovement : IDisposable
     private void RMIFlyDetour(void* self, PlayerMoveControllerFlyInput* result)
     {
         _rmiFlyHook.Original(self, result);
-        var playerObject = Player.Object;
-        if (playerObject == null) return;
+        if (Player.Object == null) return;
 
-        if (AdvancedUnstuck?.IsRunning == true)
-        {
-            var backwardDir = new Angle(playerObject.Rotation) + 180f.Degrees();
-            var vector = backwardDir.ToDirection();
-
-            result->Forward = 2f;
-            result->Left = 0f;
-            result->Up = -1f; // Optionally add a small Up value to help with ledges
-            return;
-        }
+        result->Forward = 2f;
+        result->Left = 0f;
+        result->Up = -1f;
     }
 
     private (Angle h, Angle v)? DirectionToDestination(bool allowVertical)
@@ -149,6 +140,6 @@ public unsafe class OverrideMovement : IDisposable
     private void LogInformation(string message)
     {
         // Replace this with your preferred logging system or Dalamud.Logger.Log
-        PluginLog.Information(message);
+        PluginLog.Verbose(message);
     }
 }

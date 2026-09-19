@@ -4,38 +4,12 @@ using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Common.Math;
-using System;
 
 namespace ZodiacBuddy;
 
 public static unsafe class TargetingHelper
 {
     private static ulong _storedTargetId;
-    private static int _killCount = 0;
-    private static ulong _lastKilledId = 0;
-    private static string? _killTrackingTarget = null;
-    public static int KillCount => _killCount;
-    public static void RegisterKillIfMatches(ulong killedId, string currentTargetName)
-    {
-        if (_killTrackingTarget == null || _killCount >= 3)
-            return;
-
-        if (_killTrackingTarget.Equals(currentTargetName, StringComparison.OrdinalIgnoreCase)
-            && killedId != 0 && killedId != _lastKilledId)
-        {
-            _killCount++;
-            _lastKilledId = killedId;
-            Service.PluginLog.Debug($"Registered kill for enemy '{currentTargetName}'. Total: {_killCount}");
-        }
-    }
-    public static void StartKillTracking(string targetName)
-    {
-        _killTrackingTarget = targetName;
-        _killCount = 0;
-        _lastKilledId = 0;
-        _hasAutoTargeted = false;
-    }
-
     public static ulong StoredTargetId
     {
         get => _storedTargetId;
@@ -63,30 +37,16 @@ public static unsafe class TargetingHelper
         return false;
     }
 
-    public static unsafe bool TryTargetByName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
-        foreach (var obj in Svc.Objects)
-        {
-            if (obj is IBattleChara battleChara && battleChara.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase))
-            {
-                TargetSystem.Instance()->SoftTarget = (GameObject*)battleChara.Address;
-                return true;
-            }
-        }
-
-        return false;
-    }
     public static unsafe void AutoTargetStoredIdIfVisible()
     {
-        if (_storedTargetId == 0 || _hasAutoTargeted || _killCount >= 3 || Player.Object == null)
+        if (_storedTargetId == 0 || Player.Object == null)
             return;
 
 
         var playerPos = Player.Object.Position;
         var currentTarget = Svc.Targets.Target;
+        if (_hasAutoTargeted && (currentTarget == null || currentTarget.GameObjectId != _storedTargetId))
+            _hasAutoTargeted = false;
 
         foreach (var obj in Svc.Objects)
         {
@@ -109,20 +69,21 @@ public static unsafe class TargetingHelper
                 {
                     TargetSystem.Instance()->Target = (GameObject*)battleChara.Address;
                     _hasAutoTargeted = true;
-                    Service.PluginLog.Debug($"Auto-targeted enemy: {battleChara.Name.TextValue} at {distance:F1}y");
+                    Service.PluginLog.Verbose($"[ZodiacBuddy/TARGET] Auto-targeted enemy: {battleChara.Name.TextValue} at {distance:F1}y");
                 }
 
                 return;
             }
         }
     }
-    public static unsafe void PromoteAggroingEnemy()
+    public static unsafe bool PromoteAggroingEnemy()
     {
         var player = Player.Object;
         if (player == null)
-            return;
+            return false;
 
         var playerId = player.GameObjectId;
+        var currentTargetId = Svc.Targets.Target?.GameObjectId ?? 0;
 
         foreach (var obj in Svc.Objects)
         {
@@ -131,10 +92,19 @@ public static unsafe class TargetingHelper
                 && battleChara.CurrentHp > 0
                 && battleChara.TargetObjectId == playerId)
             {
-                TargetSystem.Instance()->Target = (GameObject*)battleChara.Address;
-                Service.PluginLog.Debug($"Aggroing enemy '{battleChara.Name.TextValue}' promoted to hard target.");
-                return;
+                var native = (GameObject*)battleChara.Address;
+                if (native == null || !native->GetIsTargetable())
+                    continue;
+
+                if (currentTargetId != battleChara.GameObjectId)
+                {
+                    TargetSystem.Instance()->Target = native;
+                    Service.PluginLog.Verbose($"[ZodiacBuddy/TARGET] Aggroing enemy '{battleChara.Name.TextValue}' promoted to hard target.");
+                }
+                return true;
             }
         }
+
+        return false;
     }
 }

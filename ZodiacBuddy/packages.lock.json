@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net10.0-windows10.0.17763": {
+    "net10.0-windows7.0": {
       "DalamudPackager": {
         "type": "Direct",
         "requested": "[15.0.0, )",
@@ -25,6 +25,32 @@
         "requested": "[2.0.2, )",
         "resolved": "2.0.2",
         "contentHash": "6bJefqPtD9W8NgEChq7OYdWc2msBYPV5FJMv7oWZD9UYByCznYTeBmhJwaiThOpsSpcbo8/XNsxKANMyauJ5vQ=="
+      },
+      "LuminaSupplemental.Excel": {
+        "type": "Direct",
+        "requested": "[5.1.5, )",
+        "resolved": "5.1.5",
+        "contentHash": "32kzvAN80hfbMXrYBbS1cApUz20glevUSO6z6IdGcP1AIY/pxD0V1n8Oq7c2YWJ9UCYYyqqTj7WnHpyvfFpOlA==",
+        "dependencies": {
+          "CSVFile": "3.2.1",
+          "CsvHelper": "30.0.1",
+          "Sylvan.Data.Csv": "1.4.3"
+        }
+      },
+      "CSVFile": {
+        "type": "Transitive",
+        "resolved": "3.2.1",
+        "contentHash": "hXWPP7BGA8DS+UxdDEjAsLPdo6OUiCdaCiprxuRxpTy3nwI9DqwNWxaC5imfyD3kCb9/S2mW35s7f08uaokTUA=="
+      },
+      "CsvHelper": {
+        "type": "Transitive",
+        "resolved": "30.0.1",
+        "contentHash": "rcZtgbWR+As4G3Vpgx0AMNmShGuQLFjkHAPIIflzrfkJCx8/AOd4m96ZRmiU1Wi39qS5UVjV0P8qdgqOo5Cwyg=="
+      },
+      "Sylvan.Data.Csv": {
+        "type": "Transitive",
+        "resolved": "1.4.3",
+        "contentHash": "ZUFTqs5doO9aGrR2g0tjASSfxaMUnsxRBXCYFvDRn74XfIc0PUZ0FYRbI3Yu/4W/IFc/DBKH30OOeZ2xGqGyFQ=="
       }
     }
   }

@@ -43,7 +43,7 @@ internal class ConfigWindow : Window {
 
         if (ImGui.CollapsingHeader("Brave"))
             this.DrawBrave();
-        
+
         if (Service.Interface.IsDevMenuOpen && ImGui.CollapsingHeader("Debug"))
             this.Debug();
     }
@@ -169,7 +169,7 @@ internal class ConfigWindow : Window {
         ImGui.Text("Pro tip: Use the Sonar plugin to track Fate uptime across your entire datacenter.\n");
 
         var braveEcho = Service.Configuration.BraveEchoTarget;
-        if (ImGui.Checkbox("Display target selection in chat", ref braveEcho)) {
+        if (ImGui.Checkbox("Enable Chat Notifications of Step Progress", ref braveEcho)) {
             Service.Configuration.BraveEchoTarget = braveEcho;
             Service.Configuration.Save();
         }
@@ -179,6 +179,16 @@ internal class ConfigWindow : Window {
             Service.Configuration.BraveCopyTarget = braveCopy;
             Service.Configuration.Save();
         }
+#if DEBUG
+        ImGui.Spacing();
+        if (ImGui.Button("Open FATE Grinder"))
+            Service.Plugin.OpenFateGrinderWindow();
+        ImGui.TextDisabled("You can also open it with /zgrind.");
+        ImGui.Spacing();
+        if (ImGui.Button("Open FATE Test Harness (Debug)"))
+            Service.Plugin.OpenFateDebugWindow();
+        ImGui.TextDisabled("You can also open it with /zfate.");
+#endif
         ImGui.Spacing();
     }
 
@@ -225,8 +235,13 @@ internal class ConfigWindow : Window {
 
         ImGui.Spacing();
     }
-    
+
     private void Debug() {
+#if DEBUG
+        if (ImGui.Button("Open Animus FATE test harness"))
+            Service.Plugin.OpenFateDebugWindow();
+#endif
+
         if (ImGui.Button("Check duties territory"))
             DebugTools.CheckBonusLightDutyTerritories();
     }
