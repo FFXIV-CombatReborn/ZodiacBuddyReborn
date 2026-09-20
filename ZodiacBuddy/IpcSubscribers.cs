@@ -23,7 +23,8 @@ internal static class IPCSubscriber
 internal static class AutoDutyIpc
 {
     private static ICallGateSubscriber<uint, bool>? _contentHasPath;     
-    private static ICallGateSubscriber<string, string, object>? _setConfig; 
+    private static ICallGateSubscriber<object, bool>? _pushConfigOverrides;
+    private static ICallGateSubscriber<bool>? _popConfigOverrides;
     private static ICallGateSubscriber<uint, int, bool, object>? _run;      
     private static ICallGateSubscriber<bool>? _isStopped;                 
     private static ICallGateSubscriber<object>? _stop;                    
@@ -41,7 +42,8 @@ internal static class AutoDutyIpc
         try
         {
             _contentHasPath = Service.Interface.GetIpcSubscriber<uint, bool>("AutoDuty.ContentHasPath");
-            _setConfig = Service.Interface.GetIpcSubscriber<string, string, object>("AutoDuty.SetConfig");
+            _pushConfigOverrides = Service.Interface.GetIpcSubscriber<object, bool>("AutoDuty.PushConfigOverrides");
+            _popConfigOverrides = Service.Interface.GetIpcSubscriber<bool>("AutoDuty.PopConfigOverrides");
             _run = Service.Interface.GetIpcSubscriber<uint, int, bool, object>("AutoDuty.Run");
             _isStopped = Service.Interface.GetIpcSubscriber<bool>("AutoDuty.IsStopped");
             _stop = Service.Interface.GetIpcSubscriber<object>("AutoDuty.Stop");
@@ -72,22 +74,35 @@ internal static class AutoDutyIpc
 
     public static bool StartInstance(uint territoryId, DutyMode dutyMode, bool useBareMode = true)
     {
-        if (!Enabled || _setConfig is null || _run is null) return false;
+        if (!Enabled || _pushConfigOverrides is null || _run is null) return false;
 
+        var overridesApplied = false;
         try
         {
-            _setConfig.InvokeAction("Unsynced", (dutyMode == DutyMode.UnsyncRegular).ToString());
-
-            var modeStr = dutyMode == DutyMode.UnsyncRegular ? "Regular" : "Support";
-            _setConfig.InvokeAction("dutyModeEnum", modeStr);
+            var isUnsynced = dutyMode == DutyMode.UnsyncRegular;
+            var configOverrides = new Dictionary<string, string>
+            {
+                ["Meta.DutyModeEnum"] = isUnsynced ? "Regular" : "Support",
+                ["Meta.Unsynced"] = isUnsynced.ToString(),
+            };
+            overridesApplied = _pushConfigOverrides.InvokeFunc(configOverrides);
+            if (!overridesApplied)
+                return false;
 
             _run.InvokeAction(territoryId, 1, useBareMode);
             return true;
         }
         catch (IpcError)
         {
+            if (overridesApplied)
+                RestoreConfigOverrides();
             return false;
         }
+    }
+
+    private static void RestoreConfigOverrides()
+    {
+        try { _popConfigOverrides?.InvokeFunc(); } catch (IpcError) { }
     }
 }
 
